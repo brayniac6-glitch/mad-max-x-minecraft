@@ -17,6 +17,7 @@ namespace madcraft
 	namespace
 	{
 		constexpr float kGameTeleportThreshold = 12.0f;  // blocks; bigger jumps are Mad Max moving Max (fast travel, cutscene)
+		constexpr float kLoadThreshold = 200.0f;         // blocks; bigger jumps are a load or fast travel
 		constexpr int   kRegion = 8;                     // must match MadCollision.REGION_SIZE
 		constexpr int   kFloorRadiusRegions = 3;         // 7 x 7 regions = 56 x 56 blocks around the player
 
@@ -33,6 +34,16 @@ namespace madcraft
 		McVec         lastSet{};
 		bool          haveLastSet = false;
 		std::int64_t  lastQpc = 0;
+
+		struct Diag
+		{
+			bool   started{ false };
+			double startX{ 0 }, startZ{ 0 };
+			float  seconds{ 0 };
+			float  frames{ 0 };
+			double drift{ 0 };
+			double writeMiss{ 0 };
+		} diag;
 
 		// ---- Phase 0 floor -------------------------------------------------------------------
 		struct Floor
@@ -108,9 +119,10 @@ namespace madcraft
 			const int floorRy = static_cast<int>(std::floor((std::floor(a_surfaceY - 0.001)) / kRegion));
 			for (int dz = -kFloorRadiusRegions; dz <= kFloorRadiusRegions; ++dz) {
 				for (int dx = -kFloorRadiusRegions; dx <= kFloorRadiusRegions; ++dx) {
-					// The floor's region and the ones above it (empty, so MC knows them: the player
-					// stands in them and Minecraft waits for known ground before letting go).
-					for (int dy = 0; dy <= 1; ++dy) {
+					// The floor's region and its neighbours above and below (empty, but known: Minecraft
+					// holds a teleported player until the regions at, under and 8 blocks below its
+					// feet have all arrived; see MadClient.holdUntilReady).
+					for (int dy = -1; dy <= 1; ++dy) {
 						SendFloorRegion(rx + dx, floorRy + dy, rz + dz);
 					}
 				}
@@ -137,7 +149,7 @@ namespace madcraft
 			if (!link.Valid()) {
 				return;
 			}
-			FrameSeconds();
+			const float dt = FrameSeconds();
 
 			const bool mcAlive = link.McAlive();
 			const bool haveMc = mcAlive && link.ReadMcState(mc);
@@ -179,6 +191,12 @@ namespace madcraft
 					logger::info("Mad Max moved the player ({:.0f} blocks); resyncing Minecraft", gap);
 					teleportPending = true;
 					haveLastSet = false;
+					if (gap > kLoadThreshold && !st.madMaxControls) {
+						// A load or fast travel lands on a loading screen or cutscene: Mad Max's.
+						st.madMaxControls = true;
+						Input::ReleaseAll();
+						logger::info("controls: Mad Max (load); F8 hands the player to Minecraft");
+					}
 				}
 			}
 			// Driving, or Mad Max controls chosen (F8): Mad Max has the player; Minecraft follows.
@@ -221,8 +239,36 @@ namespace madcraft
 			st.mcGuiScale = haveMc ? static_cast<int>(mc.guiScale) : 0;
 
 			if (puppet) {
+				// What Max actually did since our last write: Mad Max's own movement fighting ours
+				// shows up as Max lagging where we put him.
+				Vec3 before{};
+				const bool haveBefore = MadMax::GetPlayerFeet(before);
 				const Vec3 target = MadMax::FromMc(mc.x, mc.y, mc.z);
 				MadMax::SetPlayerPose(target, MadMax::McYawToHeading(mc.yaw));
+				Vec3 after{};
+				const bool haveAfter = MadMax::GetPlayerFeet(after);
+
+				// Every 2 s: Minecraft's speed, how far Max strayed from our last write before this
+				// one (the game moving him itself), whether the write took, and Mad Max's frame rate.
+				diag.seconds += dt;
+				diag.frames += 1;
+				if (haveLastSet && haveBefore) {
+					const auto b = MadMax::ToMc(before);
+					diag.drift = std::max(diag.drift, std::hypot(b.x - lastSet.x, b.y - lastSet.y, b.z - lastSet.z));
+				}
+				if (haveAfter) {
+					const auto a = MadMax::ToMc(after);
+					diag.writeMiss = std::max(diag.writeMiss, std::hypot(a.x - mc.x, a.y - mc.y, a.z - mc.z));
+				}
+				if (!diag.started) {
+					diag = { true, mc.x, mc.z };
+				} else if (diag.seconds >= 2.0f) {
+					const double moved = std::hypot(mc.x - diag.startX, mc.z - diag.startZ);
+					logger::info("diag: MC speed {:.2f} blocks/s, Max drift up to {:.2f} (game moving him), write miss {:.3f}, {:.0f} fps",
+						moved / diag.seconds, diag.drift, diag.writeMiss, diag.frames / diag.seconds);
+					diag = { true, mc.x, mc.z };
+				}
+
 				lastSet = { mc.x, mc.y, mc.z };
 				haveLastSet = true;
 			} else if (inGame) {

@@ -14,8 +14,9 @@ namespace madcraft
 		// The same, or waiting for Minecraft to arrive after a teleport: Mad Max's own movement
 		// input is withheld either way.
 		std::atomic<bool> minecraftOwnsPlayer{ false };
-		// The player chose Mad Max controls (F8), or Max is driving: every key goes to the game.
-		std::atomic<bool> madMaxControls{ false };
+		// Mad Max has the controls: every key goes to the game. Starts on (menus need the mouse) and
+		// comes back on Esc and after loads; F8 hands the player to Minecraft.
+		std::atomic<bool> madMaxControls{ true };
 		std::atomic<bool> mcScreenOpen{ false };
 		std::atomic<bool> gameMenuOpen{ false };
 		std::atomic<bool> mcInWorld{ false };

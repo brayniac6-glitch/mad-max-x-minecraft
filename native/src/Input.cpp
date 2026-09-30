@@ -108,6 +108,14 @@ namespace madcraft
 				return;
 			}
 			if (!st.mcScreenOpen) {
+				if (a_dik == 0x01 && a_down) {
+					// Esc opens Mad Max's pause menu, which needs the mouse: Mad Max takes the
+					// controls until F8 hands them back.
+					st.madMaxControls = true;
+					Input::ReleaseAll();
+					logger::info("controls: Mad Max (Esc)");
+					return;
+				}
 				if (gameKeys[a_dik & 0xFF]) {
 					return;
 				}
