@@ -117,6 +117,14 @@ namespace madcraft
 			if (!a_force && !moved && !newHeight) {
 				return;
 			}
+			// A rebuild is ~150 region messages and makes Minecraft drop and rebuild its collision:
+			// at most once a second (cutscenes and loads move Max every frame).
+			static std::uint64_t lastRebuildMs = 0;
+			const std::uint64_t  now = ::GetTickCount64();
+			if (!a_force && floor.valid && now - lastRebuildMs < 1000) {
+				return;
+			}
+			lastRebuildMs = now;
 			if (!epochSent || newHeight) {
 				// A new height invalidates the old floor everywhere: new epoch, MC drops everything.
 				if (epochSent) {

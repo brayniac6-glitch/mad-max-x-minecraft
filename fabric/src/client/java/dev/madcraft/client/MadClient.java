@@ -177,6 +177,46 @@ public final class MadClient {
 		freezeWhileUnlinked(minecraft);
 		holdUntilReady(minecraft);
 		publishTick(minecraft);
+		diagnose(minecraft);
+	}
+
+	// Every 2 s of wall time while linked and moving: is the player slow because Minecraft ticks
+	// slowly, or because something in its own movement slows it?
+	private static long diagSince;
+	private static int diagTicks;
+	private static Vec3 diagFrom;
+
+	private static void diagnose(Minecraft minecraft) {
+		LocalPlayer player = minecraft.player;
+		if (!linked || player == null) {
+			diagSince = 0;
+			return;
+		}
+		long now = System.currentTimeMillis();
+		if (diagSince == 0) {
+			diagSince = now;
+			diagTicks = 0;
+			diagFrom = player.position();
+			return;
+		}
+		diagTicks++;
+		if (now - diagSince < 2000) {
+			return;
+		}
+		double seconds = (now - diagSince) / 1000.0;
+		double moved = Math.hypot(player.getX() - diagFrom.x, player.getZ() - diagFrom.z);
+		boolean forward = minecraft.options.keyUp.isDown();
+		if (moved > 0.01 || forward) {
+			var move = player.input.getMoveVector();
+			var speed = player.getAttribute(net.minecraft.world.entity.ai.attributes.Attributes.MOVEMENT_SPEED);
+			MadCraft.LOG.info("MadCraft: diag {} ticks/s, {} fps, {} blocks/s, forward key {}, move ({}, {}), velocity {}, ground {}, usingItem {}, crouching {}, sprinting {}, speed attr {}",
+				String.format("%.1f", diagTicks / seconds), minecraft.getFps(), String.format("%.2f", moved / seconds), forward,
+				String.format("%.2f", move.x), String.format("%.2f", move.y), player.getDeltaMovement(), player.onGround(), player.isUsingItem(),
+				player.isCrouching(), player.isSprinting(), speed == null ? "?" : String.format("%.3f", speed.getValue()));
+		}
+		diagSince = now;
+		diagTicks = 0;
+		diagFrom = player.position();
 	}
 
 	/**
