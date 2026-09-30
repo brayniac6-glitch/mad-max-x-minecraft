@@ -4,17 +4,77 @@ namespace madcraft
 {
 	namespace
 	{
+		// Two forms (hex numbers):
+		//   MadMax.exe+1A2B3C0, 18, 40         pointer chain from a static address
+		//   vtable:MadMax.exe+11F2A48, F0, 8    the live object whose vtable is that address (found by
+		//                                      scanning the heap), + F0, then dereference + 8 ...
 		struct Chain
 		{
-			std::string                name;
-			std::uintptr_t             base{ 0 };  // module + offset, resolved at Init
+			std::string                 name;
+			std::uintptr_t              base{ 0 };  // module + offset, resolved at Init
 			std::vector<std::uintptr_t> offsets;   // applied after each dereference
-			bool                       valid{ false };
-			bool                       warned{ false };
+			bool                        byVtable{ false };
+			std::atomic<std::uintptr_t> object{ 0 };  // byVtable: the object found by the last scan
+			std::atomic<bool>           scanning{ false };
+			std::uint64_t               lastScanMs{ 0 };
+			bool                        valid{ false };
+			bool                        warned{ false };
 		};
 
-		Chain playerMatrix;  // -> float[16] row-major world matrix (Apex: translation in row 3)
-		Chain vehicleFlag;   // -> non-zero byte while Max is in a vehicle
+		// One qword compare per 8 bytes of committed read-write private memory. Returns every hit
+		// (capped): the object's first qword is its vtable pointer. SEH-guarded: the game can free a
+		// region while we read it.
+		std::size_t ScanRegion(const std::uintptr_t* a_begin, std::size_t a_count, std::uintptr_t a_value, std::uintptr_t* a_hits, std::size_t a_maxHits)
+		{
+			std::size_t n = 0;
+			__try {
+				for (std::size_t i = 0; i < a_count && n < a_maxHits; ++i) {
+					if (a_begin[i] == a_value) {
+						a_hits[n++] = reinterpret_cast<std::uintptr_t>(a_begin + i);
+					}
+				}
+			} __except (EXCEPTION_EXECUTE_HANDLER) {
+			}
+			return n;
+		}
+
+		std::vector<std::uintptr_t> FindObjects(std::uintptr_t a_vtable)
+		{
+			std::vector<std::uintptr_t> hits(64);
+			std::size_t                 found = 0;
+			MEMORY_BASIC_INFORMATION    mbi{};
+			// Our own stack holds a_vtable (the argument), so it would find itself.
+			ULONG_PTR stackLo = 0, stackHi = 0;
+			::GetCurrentThreadStackLimits(&stackLo, &stackHi);
+			for (std::uintptr_t addr = 0x10000; found < hits.size() && ::VirtualQuery(reinterpret_cast<LPCVOID>(addr), &mbi, sizeof(mbi)); addr = reinterpret_cast<std::uintptr_t>(mbi.BaseAddress) + mbi.RegionSize) {
+				const auto base = reinterpret_cast<std::uintptr_t>(mbi.BaseAddress);
+				if (base + mbi.RegionSize > stackLo && base < stackHi) {
+					continue;
+				}
+				if (mbi.State == MEM_COMMIT && mbi.Type == MEM_PRIVATE && (mbi.Protect & (PAGE_READWRITE | PAGE_WRITECOPY)) && !(mbi.Protect & PAGE_GUARD)) {
+					found += ScanRegion(static_cast<const std::uintptr_t*>(mbi.BaseAddress), mbi.RegionSize / sizeof(std::uintptr_t), a_vtable, hits.data() + found, hits.size() - found);
+				}
+			}
+			hits.resize(found);
+			return hits;
+		}
+
+		Chain playerMatrix;       // -> float[16] row-major world matrix (Apex: translation in row 3)
+		Chain vehicleFlag;        // -> non-zero byte while Max is in a vehicle
+		Chain setTransformIface;  // -> the object whose vtable holds SetTransform(this, const float m[16])
+		int   setTransformSlot = -1;
+
+		// The game's SetTransform, SEH-guarded: a wrong slot in the ini must not take the game down.
+		bool CallSetTransform(std::uintptr_t a_fn, std::uintptr_t a_this, const float* a_m)
+		{
+			using Fn = void(__fastcall*)(void*, const float*);
+			__try {
+				reinterpret_cast<Fn>(a_fn)(reinterpret_cast<void*>(a_this), a_m);
+				return true;
+			} __except (EXCEPTION_EXECUTE_HANDLER) {
+				return false;
+			}
+		}
 
 		double scale = 1.0;  // Mad Max units per Minecraft block
 		double signX = 1.0, signZ = 1.0;
@@ -29,13 +89,16 @@ namespace madcraft
 		}
 
 		// "MadMax.exe+1A2B3C0, 18, 40" (hex, optional 0x).
-		Chain ParseChain(const char* a_key)
+		void ParseChain(Chain& c, const char* a_key)
 		{
-			Chain c;
 			c.name = a_key;
-			const auto text = IniString("Hooks", a_key, "");
+			auto text = IniString("Hooks", a_key, "");
 			if (text.empty()) {
-				return c;
+				return;
+			}
+			if (text.starts_with("vtable:")) {
+				c.byVtable = true;
+				text = Trim(text.substr(7));
 			}
 			std::vector<std::string> parts;
 			std::size_t              start = 0;
@@ -50,7 +113,7 @@ namespace madcraft
 			HMODULE     module = ::GetModuleHandleA(plus == std::string::npos ? nullptr : head.substr(0, plus).c_str());
 			if (!module) {
 				logger::warn("hook {}: module in '{}' not loaded", a_key, head);
-				return c;
+				return;
 			}
 			try {
 				c.base = reinterpret_cast<std::uintptr_t>(module) + std::stoull(plus == std::string::npos ? head : head.substr(plus + 1), nullptr, 16);
@@ -59,11 +122,53 @@ namespace madcraft
 				}
 			} catch (...) {
 				logger::warn("hook {}: can't parse '{}'", a_key, text);
-				return c;
+				return;
+			}
+			if (c.byVtable && c.offsets.empty()) {
+				c.offsets.push_back(0);
 			}
 			c.valid = true;
-			logger::info("hook {} = {}", a_key, text);
-			return c;
+			logger::info("hook {} = {}{}", a_key, c.byVtable ? "vtable:" : "", text);
+		}
+
+		std::uint64_t NowMs() { return ::GetTickCount64(); }
+
+		// The object a vtable chain starts from: the cached one while it still has that vtable,
+		// else a background rescan (at most every 2 s; the heap scan takes a moment).
+		bool ChainObject(Chain& a_chain, std::uintptr_t& a_out)
+		{
+			std::uintptr_t obj = a_chain.object.load();
+			std::uintptr_t vt = 0;
+			if (obj && SafeRead(obj, &vt, sizeof(vt)) && vt == a_chain.base) {
+				a_out = obj;
+				return true;
+			}
+			a_chain.object = 0;
+			if (!a_chain.scanning && NowMs() - a_chain.lastScanMs > 2000) {
+				a_chain.scanning = true;
+				a_chain.lastScanMs = NowMs();
+				std::thread([&a_chain] {
+					const auto hits = FindObjects(a_chain.base);
+					// Several live instances (other characters share the class): the configured
+					// offsets must lead somewhere readable; the first that does wins. Ambiguity is
+					// logged so the ini can be tightened (e.g. to the player-specific subclass).
+					for (const auto hit : hits) {
+						std::uintptr_t addr = hit + a_chain.offsets[0], next = 0;
+						bool           ok = true;
+						for (std::size_t i = 1; i < a_chain.offsets.size() && ok; ++i) {
+							ok = SafeRead(addr, &next, sizeof(next)) && next != 0;
+							addr = next + a_chain.offsets[i];
+						}
+						if (ok) {
+							a_chain.object = hit;
+							break;
+						}
+					}
+					logger::info("hook {}: {} live object(s) with vtable {:X}{}", a_chain.name, hits.size(), a_chain.base, hits.size() > 1 ? " (using the first that resolves)" : "");
+					a_chain.scanning = false;
+				}).detach();
+			}
+			return false;
 		}
 
 		// Follows the chain to the final address. Every step is checked, so a stale chain just fails.
@@ -77,12 +182,21 @@ namespace madcraft
 				return false;
 			}
 			std::uintptr_t addr = a_chain.base;
-			for (const auto off : a_chain.offsets) {
+			std::size_t    first = 0;
+			if (a_chain.byVtable) {
+				std::uintptr_t obj = 0;
+				if (!ChainObject(a_chain, obj)) {
+					return false;
+				}
+				addr = obj + a_chain.offsets[0];
+				first = 1;
+			}
+			for (std::size_t i = first; i < a_chain.offsets.size(); ++i) {
 				std::uintptr_t next = 0;
 				if (!SafeRead(addr, &next, sizeof(next)) || next == 0) {
 					return false;
 				}
-				addr = next + off;
+				addr = next + a_chain.offsets[i];
 			}
 			a_out = addr;
 			return true;
@@ -145,8 +259,10 @@ namespace madcraft
 	{
 		void Init()
 		{
-			playerMatrix = ParseChain("PlayerMatrix");
-			vehicleFlag = ParseChain("InVehicle");
+			ParseChain(playerMatrix, "PlayerMatrix");
+			ParseChain(vehicleFlag, "InVehicle");
+			ParseChain(setTransformIface, "PlayerSetTransform");
+			setTransformSlot = static_cast<int>(IniDouble("Hooks", "iSetTransformSlot", -1));
 			scale = IniDouble("World", "fUnitsPerBlock", proto::kUnitsPerBlock);
 			signX = IniBool("World", "bFlipX", false) ? -1.0 : 1.0;
 			signZ = IniBool("World", "bFlipZ", false) ? -1.0 : 1.0;
@@ -176,15 +292,29 @@ namespace madcraft
 			return std::isfinite(a_out.x) && std::isfinite(a_out.y) && std::isfinite(a_out.z);
 		}
 
-		bool SetPlayerFeet(const Vec3& a_pos)
+		bool SetPlayerPose(const Vec3& a_feet, float a_heading)
 		{
 			float          m[16];
 			std::uintptr_t addr = 0;
 			if (!ReadMatrix(m, addr)) {
 				return false;
 			}
-			const float t[3]{ a_pos.x, a_pos.y, a_pos.z };
-			return SafeWrite(addr + sizeof(float) * translationIndex, t, sizeof(t));
+			// Upright rotation about +Y (rows are basis vectors; row 2 forward), then the translation.
+			const float c = std::cos(a_heading), s = std::sin(a_heading);
+			const float rot[12]{ c, 0, -s, m[3], 0, 1, 0, m[7], s, 0, c, m[11] };
+			std::memcpy(m, rot, sizeof(rot));
+			m[translationIndex] = a_feet.x;
+			m[translationIndex + 1] = a_feet.y;
+			m[translationIndex + 2] = a_feet.z;
+
+			std::uintptr_t iface = 0;
+			if (setTransformSlot >= 0 && Resolve(setTransformIface, iface)) {
+				std::uintptr_t vtbl = 0, fn = 0;
+				if (SafeRead(iface, &vtbl, sizeof(vtbl)) && SafeRead(vtbl + sizeof(void*) * setTransformSlot, &fn, sizeof(fn)) && CallSetTransform(fn, iface, m)) {
+					return true;
+				}
+			}
+			return SafeWrite(addr, m, sizeof(m));
 		}
 
 		// Row-major, rows are the basis vectors: row 2 is forward. Heading = atan2(fwd.x, fwd.z).
@@ -199,24 +329,12 @@ namespace madcraft
 			return std::isfinite(a_out);
 		}
 
-		bool SetPlayerHeading(float a_rad)
-		{
-			float          m[16];
-			std::uintptr_t addr = 0;
-			if (!ReadMatrix(m, addr)) {
-				return false;
-			}
-			// Rotation about +Y only (the character stays upright); rows 0..2, translation untouched.
-			const float c = std::cos(a_rad), s = std::sin(a_rad);
-			const float rot[12]{ c, 0, -s, m[3], 0, 1, 0, m[7], s, 0, c, m[11] };
-			return SafeWrite(addr, rot, sizeof(rot));
-		}
-
 		bool InVehicle()
 		{
+			// A pointer (Max's attachment parent: the vehicle seat), non-null while attached.
 			std::uintptr_t addr = 0;
-			std::uint8_t   flag = 0;
-			return Resolve(vehicleFlag, addr) && SafeRead(addr, &flag, 1) && flag != 0;
+			std::uintptr_t parent = 0;
+			return Resolve(vehicleFlag, addr) && SafeRead(addr, &parent, sizeof(parent)) && parent != 0;
 		}
 
 		McVec ToMc(const Vec3& a_p)

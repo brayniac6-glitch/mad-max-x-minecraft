@@ -30,10 +30,11 @@ namespace madcraft
 		bool PlayerAvailable();
 		// Player's feet in Mad Max world space (Apex: metres, Y up).
 		bool GetPlayerFeet(Vec3& a_out);
-		bool SetPlayerFeet(const Vec3& a_pos);
 		// Heading: radians about the up axis, as stored in the player's world matrix.
 		bool GetPlayerHeading(float& a_out);
-		bool SetPlayerHeading(float a_rad);
+		// Moves and turns Max. Through the game's own SetTransform when [Hooks] PlayerSetTransform is
+		// configured (so Havok's character controller moves too), else by writing the matrix.
+		bool SetPlayerPose(const Vec3& a_feet, float a_heading);
 		// Max is in a vehicle (the Magnum Opus drives; Minecraft rides along).
 		bool InVehicle();
 

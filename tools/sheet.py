@@ -91,6 +91,23 @@ def norm_addr(a):
     return a.split(":")[-1].lstrip("0") or "0"
 
 
+def rtti_owners():
+    """fn addr -> owning class, from decomp/rtti_vtables.tsv (tools/ghidra/ExportClasses.java).
+    A function in several vtables is inherited: the owner is the class with the fewest slots (the base)."""
+    p = DECOMP / "rtti_vtables.tsv"
+    if not p.exists():
+        return {}
+    rows = list(csv.DictReader(p.open(encoding="utf-8"), delimiter="\t"))
+    slots = Counter(r["class"] for r in rows)
+    owner = {}
+    for r in rows:
+        a = norm_addr(r["fn"])
+        c = r["class"]
+        if a not in owner or slots[c] < slots[owner[a]]:
+            owner[a] = c
+    return owner
+
+
 def classify(ns, name):
     key = f"{ns}::{name}" if ns else name
     for rx, sub in CLASSIFY:
@@ -105,6 +122,7 @@ def cmd_ingest(_):
     funcs = ghidra_json("function", "list", "--limit", "0")
     old = {r["addr"]: r for r in read("functions")}
     next_id = max([int(r["fid"][1:]) for r in old.values()] or [0]) + 1
+    rtti = rtti_owners()
     rows, seen = [], set()
     for f in funcs:
         addr = norm_addr(pick(f, "address", "entry", "entry_point", "addr"))
@@ -118,6 +136,8 @@ def cmd_ingest(_):
             ns, name = full.rsplit("::", 1)
         if ns in ("Global", "<global>"):
             ns = ""
+        if not ns:
+            ns = rtti.get(addr, "")
         machine = {
             "addr": addr,
             "size": pick(f, "size", "body_size", "length", default=0),

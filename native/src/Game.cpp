@@ -222,8 +222,7 @@ namespace madcraft
 
 			if (puppet) {
 				const Vec3 target = MadMax::FromMc(mc.x, mc.y, mc.z);
-				MadMax::SetPlayerFeet(target);
-				MadMax::SetPlayerHeading(MadMax::McYawToHeading(mc.yaw));
+				MadMax::SetPlayerPose(target, MadMax::McYawToHeading(mc.yaw));
 				lastSet = { mc.x, mc.y, mc.z };
 				haveLastSet = true;
 			} else if (inGame) {

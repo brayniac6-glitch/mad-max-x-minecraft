@@ -1,8 +1,8 @@
 hid	name	phase	need	kind	value	fid	status	notes
-H01	PlayerMatrix	0	Read/write Max's world transform (puppet)	chain			open	4x4 float matrix; likely CCharacter/CPlayer + transform offset
-H02	InVehicle	0	Hand control to Mad Max while driving	chain			open	byte flag or vehicle pointer on the player
+H01	PlayerMatrix	0	Read/write Max's world transform (puppet)	chain	MadMax.exe+1715FB8, 37A8, 20, 1D8		found	CPlayer vft 141231A10 +0x20 -> CCharacter*; CCharacter iface @+8 (vft 1411C0C28): slot22 GetTransform copies +0x1D0, slot20 SetTransform(m) also warps Havok controller @+0x1B8; ctor 140149EF0; static: player mgr global 141715FB8 +0x37A8 = CPlayer* (FUN_1400FBF10)
+H02	InVehicle	0	Hand control to Mad Max while driving	chain	MadMax.exe+1715FB8, 37A8, 20, 2820, 60		found	CCharacter +0x2810 attachment link; [+0x10]+0x60 = parent object (vehicle seat) or null. From CIsPlayerVehicleCondition (140120930) -> FUN_1405835C0 -> iface@+0x1C0 slot12 (140129500)
 H03	GameUpdate	1	Per-frame game-thread callback (replace Present-thread puppeting)	function			open	main loop / world update tick
-H04	DisableMovement	1	Stop Max's own locomotion so physics doesn't fight the puppet	function			open	character controller update or input->movement
+H04	DisableMovement	1	Stop Max's own locomotion so physics doesn't fight the puppet	function	CCharacter iface +8 vtable slot 20		found	SetTransform moves the character controller too; used instead of raw matrix writes. Own locomotion still runs: needs input blanking (done) and maybe controller disable
 H05	PhysicsRaycast	1	Ray/shape query into Apex physics for the collision field	function			open	replaces the flat Phase 0 floor
 H06	CameraMatrices	1	View + projection for third-person Steve and block rendering	chain			open	camera manager singleton
 H07	MenuOpen	1	Mad Max menu/pause/loading owns input	chain			open	UI state flag

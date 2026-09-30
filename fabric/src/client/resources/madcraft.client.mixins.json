@@ -6,6 +6,8 @@
     "CameraZoomMixin",
     "ChatComponentMixin",
     "ClientLevelAccessor",
+    "DefaultPlayerSkinAccessor",
+    "DefaultSteveMixin",
     "EntityCollideMixin",
     "FramerateLimitTrackerMixin",
     "InputConstantsMixin",
