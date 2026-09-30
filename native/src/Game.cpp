@@ -34,6 +34,16 @@ namespace madcraft
 		McVec         lastSet{};
 		bool          haveLastSet = false;
 		std::int64_t  lastQpc = 0;
+		std::atomic<DWORD> renderThread{ 0 };
+
+		// The pose Minecraft wants Max in, applied on the game thread (see GameThreadTick).
+		struct Pose
+		{
+			bool  pending{ false };
+			Vec3  feet{};
+			float heading{ 0 };
+		} pose;
+		std::mutex poseLock;
 
 		struct Diag
 		{
@@ -142,8 +152,29 @@ namespace madcraft
 
 	namespace Game
 	{
+		void GameThreadTick()
+		{
+			static bool logged = false;
+			if (!logged) {
+				logged = true;
+				logger::info("threads: game input poll on {}, render (Present) on {}", ::GetCurrentThreadId(), renderThread.load());
+			}
+			if (::GetCurrentThreadId() == renderThread) {
+				return;  // same thread after all: Tick() already ran; never write from Present
+			}
+			Pose p;
+			{
+				std::lock_guard g{ poseLock };
+				p = pose;
+			}
+			if (p.pending && State().puppeting) {
+				MadMax::SetPlayerPose(p.feet, p.heading);
+			}
+		}
+
 		void Tick()
 		{
+			renderThread = ::GetCurrentThreadId();
 			auto& link = Link::Get();
 			auto& st = State();
 			if (!link.Valid()) {
@@ -241,10 +272,14 @@ namespace madcraft
 			if (puppet) {
 				// What Max actually did since our last write: Mad Max's own movement fighting ours
 				// shows up as Max lagging where we put him.
+				// The write itself happens on Mad Max's game thread (GameThreadTick, from its input
+				// poll): calling SetTransform from this render thread races Havok.
 				Vec3 before{};
 				const bool haveBefore = MadMax::GetPlayerFeet(before);
-				const Vec3 target = MadMax::FromMc(mc.x, mc.y, mc.z);
-				MadMax::SetPlayerPose(target, MadMax::McYawToHeading(mc.yaw));
+				{
+					std::lock_guard g{ poseLock };
+					pose = { true, MadMax::FromMc(mc.x, mc.y, mc.z), MadMax::McYawToHeading(mc.yaw) };
+				}
 				Vec3 after{};
 				const bool haveAfter = MadMax::GetPlayerFeet(after);
 
@@ -264,16 +299,27 @@ namespace madcraft
 					diag = { true, mc.x, mc.z };
 				} else if (diag.seconds >= 2.0f) {
 					const double moved = std::hypot(mc.x - diag.startX, mc.z - diag.startZ);
-					logger::info("diag: MC speed {:.2f} blocks/s, Max drift up to {:.2f} (game moving him), write miss {:.3f}, {:.0f} fps",
-						moved / diag.seconds, diag.drift, diag.writeMiss, diag.frames / diag.seconds);
+					// Only while something happens (moving, or keys held), so standing still stays quiet.
+					const auto held = Input::DescribeHeld();
+					if (moved > 0.01 || held.find("key") != std::string::npos || held.find("mouse") != std::string::npos) {
+						const auto f = mc.flags;
+						logger::info("diag: MC speed {:.2f} blocks/s [{}{}{}{}{}], held:{}, Max drift {:.2f}, write miss {:.3f}, {:.0f} fps",
+							moved / diag.seconds, (f & proto::kMcOnGround) ? "ground" : "AIR", (f & proto::kMcSneaking) ? " SNEAK" : "",
+							(f & proto::kMcSprinting) ? " sprint" : "", (f & proto::kMcSwimming) ? " SWIM" : "", (f & proto::kMcFlying) ? " FLY" : "",
+							held, diag.drift, diag.writeMiss, diag.frames / diag.seconds);
+					}
 					diag = { true, mc.x, mc.z };
 				}
 
 				lastSet = { mc.x, mc.y, mc.z };
 				haveLastSet = true;
-			} else if (inGame) {
-				lastSet = feetMc;
-				haveLastSet = true;
+			} else {
+				std::lock_guard g{ poseLock };
+				pose.pending = false;
+				if (inGame) {
+					lastSet = feetMc;
+					haveLastSet = true;
+				}
 			}
 
 			// Tell Minecraft where Max is and where they're looking.

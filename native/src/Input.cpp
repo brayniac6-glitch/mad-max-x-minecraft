@@ -64,6 +64,22 @@ namespace madcraft
 		std::atomic<float>                            lookDx{ 0.0f }, lookDy{ 0.0f };
 		std::atomic<bool>                             f8Down{ false };
 
+		// What Minecraft has been told is held (diagnostics), and how many presses it got.
+		std::array<std::atomic<bool>, 256> sentKeys{};
+		std::array<std::atomic<bool>, 8>   sentButtons{};
+		std::atomic<int>                   presses{ 0 };
+
+		void Send(proto::InputType a_type, std::uint16_t a_code, bool a_down)
+		{
+			if (a_type == proto::kInKey && a_code < sentKeys.size()) {
+				sentKeys[a_code] = a_down;
+			} else if (a_type == proto::kInMouseButton && a_code < sentButtons.size()) {
+				sentButtons[a_code] = a_down;
+			}
+			presses += a_down ? 1 : 0;
+			Link::Get().PushInput(a_type, a_code, a_down ? 1 : 0);
+		}
+
 		Kind KindOf(void* a_device)
 		{
 			std::lock_guard g{ devicesLock };
@@ -128,7 +144,7 @@ namespace madcraft
 				}
 			}
 			if (const auto sdl = kDikToSdl[a_dik & 0xFF]) {
-				link.PushInput(proto::kInKey, sdl, a_down ? 1 : 0);
+				Send(proto::kInKey, sdl, a_down);
 			}
 		}
 
@@ -161,7 +177,7 @@ namespace madcraft
 				for (int i = 0; i < std::min(a_count, 8); ++i) {
 					const bool down = (a_buttons[i] & 0x80) != 0;
 					if (down != ((lastButtons[i] & 0x80) != 0) && kSdl[i]) {
-						link.PushInput(proto::kInMouseButton, kSdl[i], down ? 1 : 0);
+						Send(proto::kInMouseButton, kSdl[i], down);
 					}
 					lastButtons[i] = a_buttons[i];
 				}
@@ -182,6 +198,7 @@ namespace madcraft
 			const auto kind = KindOf(a_this);
 			const bool buffered = ReadsBuffered(a_this);
 			if (kind == Kind::kKeyboard && a_size >= 256) {
+				Game::GameThreadTick();  // the game polls its keyboard on its game thread, once a frame
 				auto* keys = static_cast<std::uint8_t*>(a_data);
 				if (!buffered) {
 					for (std::uint32_t i = 0; i < 256; ++i) {
@@ -220,6 +237,9 @@ namespace madcraft
 			const auto kind = KindOf(a_this);
 			if (kind == Kind::kOther) {
 				return a_hr;
+			}
+			if (kind == Kind::kKeyboard) {
+				Game::GameThreadTick();
 			}
 			{
 				std::lock_guard g{ devicesLock };
@@ -343,7 +363,30 @@ namespace madcraft
 
 		void ReleaseAll()
 		{
+			for (auto& k : sentKeys) {
+				k = false;
+			}
+			for (auto& b : sentButtons) {
+				b = false;
+			}
 			Link::Get().PushInput(proto::kInReleaseAll, 0);
+		}
+
+		std::string DescribeHeld()
+		{
+			std::string s;
+			for (std::size_t i = 0; i < sentKeys.size(); ++i) {
+				if (sentKeys[i]) {
+					s += std::format(" key{}", i);
+				}
+			}
+			for (std::size_t i = 0; i < sentButtons.size(); ++i) {
+				if (sentButtons[i]) {
+					s += std::format(" mouse{}", i);
+				}
+			}
+			s += std::format(" ({} presses)", presses.exchange(0));
+			return s;
 		}
 	}
 }

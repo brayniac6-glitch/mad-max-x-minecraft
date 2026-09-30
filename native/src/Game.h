@@ -43,6 +43,9 @@ namespace madcraft
 	{
 		// Once per rendered frame (from Present): link bookkeeping, puppeting, state out to MC.
 		void Tick();
+		// On Mad Max's game thread (its keyboard poll, before gameplay runs): moves Max to the pose
+		// Tick() published. Game functions are only ever called from here.
+		void GameThreadTick();
 	}
 
 	namespace Launcher
@@ -57,6 +60,8 @@ namespace madcraft
 		void WrapDeviceA(REFGUID a_guid, IDirectInputDevice8A* a_device);
 		void ConsumeLook(float& a_dx, float& a_dy);
 		void ReleaseAll();
+		// Diagnostics: what Minecraft has been told is held (SDL codes), and presses since last call.
+		std::string DescribeHeld();
 	}
 
 	namespace Overlay
