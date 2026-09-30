@@ -20,6 +20,9 @@ namespace madcraft
 		std::atomic<bool> mcScreenOpen{ false };
 		std::atomic<bool> gameMenuOpen{ false };
 		std::atomic<bool> mcInWorld{ false };
+		// Mad Max's camera sets the look: the mouse keeps turning Mad Max's camera while Minecraft
+		// drives, instead of going to Minecraft.
+		std::atomic<bool> cameraLook{ false };
 
 		float yaw{ 0.0f };  // MC degrees, integrated from raw mouse
 		float pitch{ 0.0f };

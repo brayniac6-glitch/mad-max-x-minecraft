@@ -223,7 +223,14 @@ namespace madcraft
 					OnMouse(m->lX, m->lY, m->lZ, m->rgbButtons, nButtons, true);
 				}
 				if (RouteToMinecraft()) {
+					// Mad Max's camera sets the look: it keeps the mouse movement, Minecraft keeps
+					// the buttons and wheel.
+					const LONG keepX = m->lX, keepY = m->lY;
 					std::memset(a_data, 0, a_size);
+					if (State().cameraLook && !State().mcScreenOpen) {
+						m->lX = keepX;
+						m->lY = keepY;
+					}
 				}
 			}
 			return a_hr;
@@ -257,6 +264,9 @@ namespace madcraft
 					keep = keep || (gameKeys[e.dwOfs & 0xFF] && !State().mcScreenOpen);
 				} else {
 					const LONG v = static_cast<LONG>(e.dwData);
+					if ((e.dwOfs == DIMOFS_X || e.dwOfs == DIMOFS_Y) && State().cameraLook && !State().mcScreenOpen) {
+						keep = true;  // Mad Max's camera sets the look (see FilterState)
+					}
 					if (e.dwOfs == DIMOFS_X) {
 						OnMouse(v, 0, 0, lastButtons.data(), 0, false);
 					} else if (e.dwOfs == DIMOFS_Y) {

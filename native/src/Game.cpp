@@ -36,6 +36,12 @@ namespace madcraft
 		std::int64_t  lastQpc = 0;
 		std::atomic<DWORD> renderThread{ 0 };
 
+		// Game-camera look (see Tick): the calibrated forward axis (row*2 + negated), -1 = unknown.
+		const bool useGameCamera = IniBool("Camera", "bUseGameCamera", true);
+		int        camAxis = -1;
+		int        camCandidate = -1;
+		int        camVotes = 0;
+
 		// The pose Minecraft wants Max in, applied on the game thread (see GameThreadTick).
 		struct Pose
 		{
@@ -262,10 +268,55 @@ namespace madcraft
 				logger::info("teleport {} to {:.1f} {:.1f} {:.1f}", teleportSeq, feetMc.x, feetMc.y, feetMc.z);
 			}
 
+			// Look: Mad Max's own camera (the mouse turns it as usual) sets where Minecraft looks, so
+			// W walks where you see. Which camera matrix row is "forward" isn't known up front: a
+			// third-person camera looks at the player, so the row that points from the camera to
+			// Max's head wins, once it has agreed for a moment (like SkyCraft's runtime axis check).
+			bool camLook = false;
+			if (useGameCamera && inGame) {
+				float cm[16];
+				if (MadMax::GetCameraMatrix(cm)) {
+					const Vec3  camPos{ cm[12], cm[13], cm[14] };
+					const float tx = feet.x - camPos.x, ty = feet.y + 1.6f - camPos.y, tz = feet.z - camPos.z;
+					const float dist = std::sqrt(tx * tx + ty * ty + tz * tz);
+					if (camAxis < 0 && !driving && dist > 1.0f && dist < 15.0f) {
+						int   best = -1;
+						float bestDot = 0.0f;
+						for (int c = 0; c < 6; ++c) {
+							const int   r = c / 2;
+							const float s = (c & 1) ? -1.0f : 1.0f;
+							const float d = s * (cm[r * 4] * tx + cm[r * 4 + 1] * ty + cm[r * 4 + 2] * tz) / dist;
+							if (d > bestDot) {
+								bestDot = d, best = c;
+							}
+						}
+						camVotes = (best == camCandidate && bestDot > 0.85f) ? camVotes + 1 : 0;
+						camCandidate = best;
+						if (camVotes >= 60) {
+							camAxis = best;
+							logger::info("camera: forward is {}row {} (agreed for 60 frames, alignment {:.2f})", (best & 1) ? "-" : "+", best / 2, bestDot);
+						}
+					}
+					if (camAxis >= 0) {
+						const int    r = camAxis / 2;
+						const float  s = (camAxis & 1) ? -1.0f : 1.0f;
+						const McVec  f = MadMax::ToMc({ s * cm[r * 4], s * cm[r * 4 + 1], s * cm[r * 4 + 2] });
+						const double h = std::sqrt(f.x * f.x + f.z * f.z);
+						if (h > 1e-4) {
+							st.yaw = static_cast<float>(std::atan2(-f.x, f.z) * 57.29577951308232);
+						}
+						st.pitch = static_cast<float>(-std::atan2(f.y, h) * 57.29577951308232);
+						st.lookInitialized = true;
+						camLook = true;
+					}
+				}
+			}
+			st.cameraLook = camLook;
+
 			// Mouse look (Minecraft's formula), integrated here so the view has no added latency.
 			float dx = 0.0f, dy = 0.0f;
 			Input::ConsumeLook(dx, dy);
-			if (!st.mcScreenOpen && !st.gameMenuOpen && !gameHasPlayer) {
+			if (!camLook && !st.mcScreenOpen && !st.gameMenuOpen && !gameHasPlayer) {
 				const float s = st.sensitivity * 0.6f + 0.2f;
 				const float factor = s * s * s * 8.0f * 0.15f;
 				st.yaw = std::fmod(st.yaw + dx * factor, 360.0f);

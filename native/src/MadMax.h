@@ -38,6 +38,10 @@ namespace madcraft
 		// Max is in a vehicle (the Magnum Opus drives; Minecraft rides along).
 		bool InVehicle();
 
+		// Mad Max's render camera ([Hooks] CameraMatrix): position and the direction it looks, in Mad
+		// Max world space. Which matrix row is "forward" is found at runtime (see Game.cpp).
+		bool GetCameraMatrix(float (&a_m)[16]);
+
 		// Mad Max world <-> Minecraft blocks. Scale and axis flips come from [World] in the ini
 		// until they are verified in game; Apex and Minecraft are both Y-up.
 		McVec ToMc(const Vec3& a_p);

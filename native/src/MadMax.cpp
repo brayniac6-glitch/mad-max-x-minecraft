@@ -62,6 +62,7 @@ namespace madcraft
 		Chain playerMatrix;       // -> float[16] row-major world matrix (Apex: translation in row 3)
 		Chain vehicleFlag;        // -> non-zero byte while Max is in a vehicle
 		Chain setTransformIface;  // -> the object whose vtable holds SetTransform(this, const float m[16])
+		Chain cameraMatrix;       // -> the render camera's 4x4 world matrix
 		int   setTransformSlot = -1;
 
 		// The game's SetTransform, SEH-guarded: a wrong slot in the ini must not take the game down.
@@ -262,6 +263,7 @@ namespace madcraft
 			ParseChain(playerMatrix, "PlayerMatrix");
 			ParseChain(vehicleFlag, "InVehicle");
 			ParseChain(setTransformIface, "PlayerSetTransform");
+			ParseChain(cameraMatrix, "CameraMatrix");
 			setTransformSlot = static_cast<int>(IniDouble("Hooks", "iSetTransformSlot", -1));
 			scale = IniDouble("World", "fUnitsPerBlock", proto::kUnitsPerBlock);
 			signX = IniBool("World", "bFlipX", false) ? -1.0 : 1.0;
@@ -335,6 +337,22 @@ namespace madcraft
 			std::uintptr_t addr = 0;
 			std::uintptr_t parent = 0;
 			return Resolve(vehicleFlag, addr) && SafeRead(addr, &parent, sizeof(parent)) && parent != 0;
+		}
+
+		bool GetCameraMatrix(float (&a_m)[16])
+		{
+			std::uintptr_t addr = 0;
+			if (!Resolve(cameraMatrix, addr) || !SafeRead(addr, a_m, sizeof(a_m))) {
+				return false;
+			}
+			// Sanity: the rotation rows must be unit vectors, else the offset is wrong.
+			for (int r = 0; r < 3; ++r) {
+				const float len = std::sqrt(a_m[r * 4] * a_m[r * 4] + a_m[r * 4 + 1] * a_m[r * 4 + 1] + a_m[r * 4 + 2] * a_m[r * 4 + 2]);
+				if (!(std::fabs(len - 1.0f) < 0.05f)) {
+					return false;
+				}
+			}
+			return true;
 		}
 
 		McVec ToMc(const Vec3& a_p)
