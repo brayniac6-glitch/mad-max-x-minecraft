@@ -67,7 +67,13 @@ namespace madcraft
 		{
 			auto&     link = Link::Get();
 			const int x0 = a_rx * kRegion, y0 = a_ry * kRegion, z0 = a_rz * kRegion;
-			const int floorBlock = static_cast<int>(std::floor(floor.y - 0.001));
+			// The voxels must never stick up above the triangles: the player walks on the triangles
+			// (client), but Minecraft's server checks moves against the voxels, and feet inside a
+			// voxel make every step into a new block column "collide with something new" -> the
+			// server silently sends the player back. So round the voxel top DOWN to 1/8 block.
+			const int topEighths = static_cast<int>(std::floor(floor.y * 8.0));
+			const int floorBlock = static_cast<int>(std::floor((topEighths - 1) / 8.0));
+			const int layers = topEighths - floorBlock * 8;  // 1..8
 			const bool hasFloor = floorBlock >= y0 && floorBlock < y0 + kRegion;
 
 			// Triangles first (the player's smooth collider), then the voxels (everything else).
@@ -89,9 +95,8 @@ namespace madcraft
 			auto* region = reinterpret_cast<proto::ColRegion*>(buf.data());
 			*region = { x0, y0, z0, x0 + kRegion - 1, y0 + kRegion - 1, z0 + kRegion - 1, epoch, hasFloor ? std::uint32_t(kRegion * kRegion) : 0u };
 			if (hasFloor) {
-				// Sub-voxel layers from the block's bottom up to the surface (1/8 block each).
-				const int layers = std::clamp(static_cast<int>(std::ceil((floor.y - floorBlock) * 8.0)), 1, 8);
-				auto*     block = reinterpret_cast<proto::ColBlock*>(region + 1);
+				// Sub-voxel layers from the block's bottom up to (at most) the surface, 1/8 block each.
+				auto* block = reinterpret_cast<proto::ColBlock*>(region + 1);
 				for (int dz = 0; dz < kRegion; ++dz) {
 					for (int dx = 0; dx < kRegion; ++dx, ++block) {
 						*block = {};
@@ -134,7 +139,7 @@ namespace madcraft
 				epochSent = true;
 			}
 			floor = { true, a_surfaceY, rx, rz };
-			const int floorRy = static_cast<int>(std::floor((std::floor(a_surfaceY - 0.001)) / kRegion));
+			const int floorRy = static_cast<int>(std::floor(std::floor((std::floor(a_surfaceY * 8.0) - 1) / 8.0) / kRegion));
 			for (int dz = -kFloorRadiusRegions; dz <= kFloorRadiusRegions; ++dz) {
 				for (int dx = -kFloorRadiusRegions; dx <= kFloorRadiusRegions; ++dx) {
 					// The floor's region and its neighbours above and below (empty, but known: Minecraft
