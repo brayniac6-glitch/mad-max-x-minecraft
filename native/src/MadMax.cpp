@@ -63,6 +63,29 @@ namespace madcraft
 		Chain vehicleFlag;        // -> non-zero byte while Max is in a vehicle
 		Chain setTransformIface;  // -> the object whose vtable holds SetTransform(this, const float m[16])
 		Chain cameraMatrix;       // -> the render camera's 4x4 world matrix
+		Chain physicsSystem;      // -> pointer to the CPhysicsSystem (dereferenced once)
+		Chain raycastFn;          // function address (no dereference)
+		Chain staticFilterCtor;   // function address: CStaticOnlyRaycastFilter(this, mode, 0, 0, 0)
+
+		// FUN_140849E50: (system, tag, ray{origin[3], dir[3]}, minDist, maxDist, result, collector,
+		// 0, 0, 0, 0). The collector is a CStaticOnlyRaycastFilter (0x98 bytes, mode 3 as the game's
+		// own callers use). Result: +0x08 normal, +0x14 hit fraction between min and max (1 = none).
+		using RaycastFn = std::uint8_t(__fastcall*)(void*, const char*, const float*, float, float, void*, void*, void*, char, int, int*);
+		using FilterCtorFn = void*(__fastcall*)(void*, int, int, int, void*);
+
+		bool CallRaycast(RaycastFn a_fn, FilterCtorFn a_ctor, void* a_sys, const float* a_ray, float a_max, float& a_fraction)
+		{
+			alignas(16) std::uint8_t filter[0x100]{};
+			alignas(16) std::uint8_t result[0x80]{};
+			__try {
+				a_ctor(filter, 3, 0, 0, nullptr);
+				const auto hit = a_fn(a_sys, "MadCraft", a_ray, 0.0f, a_max, result, filter, nullptr, 0, 0, nullptr);
+				a_fraction = *reinterpret_cast<float*>(result + 0x14);
+				return (hit & 1) != 0 && a_fraction < 1.0f;
+			} __except (EXCEPTION_EXECUTE_HANDLER) {
+				return false;
+			}
+		}
 		int   setTransformSlot = -1;
 
 		// The game's SetTransform, SEH-guarded: a wrong slot in the ini must not take the game down.
@@ -264,6 +287,9 @@ namespace madcraft
 			ParseChain(vehicleFlag, "InVehicle");
 			ParseChain(setTransformIface, "PlayerSetTransform");
 			ParseChain(cameraMatrix, "CameraMatrix");
+			ParseChain(physicsSystem, "PhysicsSystem");
+			ParseChain(raycastFn, "RaycastFunction");
+			ParseChain(staticFilterCtor, "RaycastStaticFilter");
 			setTransformSlot = static_cast<int>(IniDouble("Hooks", "iSetTransformSlot", -1));
 			scale = IniDouble("World", "fUnitsPerBlock", proto::kUnitsPerBlock);
 			signX = IniBool("World", "bFlipX", false) ? -1.0 : 1.0;
@@ -352,6 +378,35 @@ namespace madcraft
 					return false;
 				}
 			}
+			return true;
+		}
+
+		bool RaycastAvailable()
+		{
+			return physicsSystem.valid && raycastFn.valid && staticFilterCtor.valid;
+		}
+
+		bool RaycastStatic(const Vec3& a_from, const Vec3& a_to, Vec3& a_hit)
+		{
+			if (!RaycastAvailable()) {
+				return false;
+			}
+			std::uintptr_t sysSlot = 0, sys = 0;
+			if (!Resolve(physicsSystem, sysSlot) || !SafeRead(sysSlot, &sys, sizeof(sys)) || !sys) {
+				return false;
+			}
+			const float dx = a_to.x - a_from.x, dy = a_to.y - a_from.y, dz = a_to.z - a_from.z;
+			const float len = std::sqrt(dx * dx + dy * dy + dz * dz);
+			if (len < 1e-4f) {
+				return false;
+			}
+			const float ray[6]{ a_from.x, a_from.y, a_from.z, dx / len, dy / len, dz / len };
+			float       fraction = 1.0f;
+			if (!CallRaycast(reinterpret_cast<RaycastFn>(raycastFn.base), reinterpret_cast<FilterCtorFn>(staticFilterCtor.base),
+					reinterpret_cast<void*>(sys), ray, len, fraction)) {
+				return false;
+			}
+			a_hit = { a_from.x + dx * fraction, a_from.y + dy * fraction, a_from.z + dz * fraction };
 			return true;
 		}
 

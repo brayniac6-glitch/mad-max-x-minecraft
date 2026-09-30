@@ -42,6 +42,11 @@ namespace madcraft
 		// Max world space. Which matrix row is "forward" is found at runtime (see Game.cpp).
 		bool GetCameraMatrix(float (&a_m)[16]);
 
+		// Mad Max's physics raycast against the static world only (terrain, buildings, rocks), in Mad
+		// Max world space. Game thread only. Returns false on a miss or when [Hooks] Raycast* aren't set.
+		bool RaycastAvailable();
+		bool RaycastStatic(const Vec3& a_from, const Vec3& a_to, Vec3& a_hit);
+
 		// Mad Max world <-> Minecraft blocks. Scale and axis flips come from [World] in the ini
 		// until they are verified in game; Apex and Minecraft are both Y-up.
 		McVec ToMc(const Vec3& a_p);

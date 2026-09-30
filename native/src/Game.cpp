@@ -1,5 +1,7 @@
 #include "Game.h"
 
+#include "Collision.h"
+
 // The per-frame bridge, modelled on SkyCraft's Game.cpp (MIT, chasmlol): Mad Max tells Minecraft
 // where Max is; once Minecraft has arrived there, Minecraft's player drives Max.
 //
@@ -189,6 +191,11 @@ namespace madcraft
 			if (p.pending && State().puppeting) {
 				MadMax::SetPlayerPose(p.feet, p.heading);
 			}
+			// Mad Max's real ground around the player (raycasts must come from the game thread).
+			Vec3 feet{};
+			if (State().mcInWorld && Collision::Available() && MadMax::GetPlayerFeet(feet)) {
+				Collision::Update(MadMax::ToMc(feet));
+			}
 		}
 
 		void Tick()
@@ -206,6 +213,7 @@ namespace madcraft
 			if (mcAlive != mcWasAlive) {
 				logger::info("Minecraft {}", mcAlive ? "connected" : "gone");
 				link.ResetOverlay();
+				Collision::RequestReset();
 				teleportPending = true;
 				epochSent = false;
 				floor.valid = false;
@@ -279,10 +287,16 @@ namespace madcraft
 					const Vec3  camPos{ cm[12], cm[13], cm[14] };
 					const float tx = feet.x - camPos.x, ty = feet.y + 1.6f - camPos.y, tz = feet.z - camPos.z;
 					const float dist = std::sqrt(tx * tx + ty * ty + tz * tz);
-					if (camAxis < 0 && !driving && dist > 1.0f && dist < 15.0f) {
+					// Only in gameplay with Minecraft driving (the main menu's camera looks down at Max
+					// from above, which once picked the camera's "down" axis), and never row 1: in a
+					// Y-up camera that's the up/down axis, and walking along it flips with pitch.
+					if (camAxis < 0 && st.puppeting && !driving && dist > 1.0f && dist < 15.0f) {
 						int   best = -1;
 						float bestDot = 0.0f;
 						for (int c = 0; c < 6; ++c) {
+							if (c / 2 == 1) {
+								continue;
+							}
 							const int   r = c / 2;
 							const float s = (c & 1) ? -1.0f : 1.0f;
 							const float d = s * (cm[r * 4] * tx + cm[r * 4 + 1] * ty + cm[r * 4 + 2] * tz) / dist;
@@ -390,7 +404,7 @@ namespace madcraft
 			proto::MadState out{};
 			out.flags = (inGame ? proto::kSkyInGame : 0u) | (st.gameMenuOpen ? proto::kSkyMenuOpen : 0u) | (inGame ? 0u : proto::kSkyLoading);
 			out.worldId = 1;  // one open world (Mad Max has no separate worldspaces/interiors)
-			out.collisionEpoch = epoch;
+			out.collisionEpoch = Collision::Available() ? Collision::Epoch() : epoch;
 			out.posX = feetMc.x;
 			out.posY = feetMc.y;
 			out.posZ = feetMc.z;
@@ -404,7 +418,7 @@ namespace madcraft
 
 			// Phase 0 ground: while Minecraft drives, the floor stays at the height Max stood on when
 			// it took over; otherwise it follows Max.
-			if (haveMc && inGame) {
+			if (haveMc && inGame && !Collision::Available()) {
 				if (puppet) {
 					UpdateFloor({ mc.x, mc.y, mc.z }, floor.valid ? floor.y : feetMc.y, false);
 				} else {
