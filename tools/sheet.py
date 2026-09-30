@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """Spreadsheet Method driver: the sheet/ TSVs are the source of truth, everything else is a projection.
 
 Usage: python tools/sheet.py <ingest|coverage|validate|claim|release|next|decomp|find> [...]

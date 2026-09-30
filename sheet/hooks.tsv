@@ -1,0 +1,14 @@
+hid	name	phase	need	kind	value	fid	status	notes
+H01	PlayerMatrix	0	Read/write Max's world transform (puppet)	chain			open	4x4 float matrix; likely CCharacter/CPlayer + transform offset
+H02	InVehicle	0	Hand control to Mad Max while driving	chain			open	byte flag or vehicle pointer on the player
+H03	GameUpdate	1	Per-frame game-thread callback (replace Present-thread puppeting)	function			open	main loop / world update tick
+H04	DisableMovement	1	Stop Max's own locomotion so physics doesn't fight the puppet	function			open	character controller update or input->movement
+H05	PhysicsRaycast	1	Ray/shape query into Apex physics for the collision field	function			open	replaces the flat Phase 0 floor
+H06	CameraMatrices	1	View + projection for third-person Steve and block rendering	chain			open	camera manager singleton
+H07	MenuOpen	1	Mad Max menu/pause/loading owns input	chain			open	UI state flag
+H08	TimeOfDay	2	Sky/light sync to Minecraft dayTime	chain			open	
+H09	ActorList	3	Nearby War Boys etc: pos, bbox, health	chain			open	for proxy entities
+H10	DamageActor	3	Apply Minecraft hits to Mad Max NPCs	function			open	
+H11	PlayerHurt	3	Intercept damage to Max and forward to Minecraft	function			open	
+H12	DepthBuffer	4	Scene depth for compositing Minecraft blocks	d3d			open	found from D3D11 state, no RE
+H13	HidePlayerMesh	2	Hide Max's model so Steve replaces him	function			open	or scale mesh to 0

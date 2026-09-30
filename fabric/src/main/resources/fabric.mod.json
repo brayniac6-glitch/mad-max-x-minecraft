@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "id": "madcraft",
+  "version": "${version}",
+  "name": "MadCraft",
+  "description": "Play Mad Max with Minecraft physics, inventory and viewmodels.",
+  "authors": ["brayniac6-glitch"], "contributors": ["chasmlol (SkyCraft, MIT)"],
+  "contact": {
+    "sources": "https://github.com/brayniac6-glitch/mad-max-x-minecraft"
+  },
+  "license": "MIT",
+  "environment": "client",
+  "entrypoints": {
+    "main": ["dev.madcraft.MadCraft"],
+    "client": ["dev.madcraft.client.MadCraftClient"]
+  },
+  "mixins": [
+    "madcraft.mixins.json",
+    { "config": "madcraft.client.mixins.json", "environment": "client" }
+  ],
+  "depends": {
+    "fabricloader": ">=0.19.5",
+    "minecraft": "~26.3",
+    "java": ">=25",
+    "fabric-api": "*"
+  }
+}
