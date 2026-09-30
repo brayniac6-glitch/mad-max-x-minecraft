@@ -1,0 +1,17 @@
+key	madmax	minecraft	kind	status	notes
+magnum_opus	Magnum Opus car	Rideable custom vehicle entity with upgrade slots	entity	proposed	Core loop; data from vehicle tables
+car_upgrades	Engine/armor/ram/tires upgrades	Upgrade items applied at a workbench block	item	proposed	From data sub
+scrap	Scrap currency	Scrap item + scavenging loot tables	item	proposed	
+water_canteen	Canteen/water	Drinkable item refilled at water sources; heals	item	proposed	
+fuel	Fuel cans	Fuel item consumed by vehicles	item	proposed	
+harpoon	Harpoon	Ranged tool that pulls entities/blocks (fishing-rod physics)	item	proposed	
+thunderpoon	Thunderpoon	Explosive projectile launcher	item	proposed	
+shotgun	Shotgun	Scarce-ammo ranged weapon	item	proposed	
+war_boys	War Boys	Hostile humanoid mobs with faction AI	entity	proposed	
+convoys	Convoys	Moving mob-driven vehicle groups on roads	mechanic	proposed	
+outposts	Enemy strongholds	Generated structures to clear	world	proposed	
+threat	Territory threat level	Per-region score lowered by clearing objectives	mechanic	proposed	Stored per chunk region
+strongholds	Ally strongholds & projects	Buildable base upgrades	mechanic	proposed	
+sandstorm	Sandstorms	Weather event: low visibility, loot drops, damage	world	proposed	
+wasteland_biome	The Great White	Custom desert/salt-flat biomes + dimension	world	proposed	
+chum	Chumbucket	Companion mob that repairs vehicle	entity	proposed	

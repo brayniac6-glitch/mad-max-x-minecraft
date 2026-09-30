@@ -1,0 +1,21 @@
+sub	title	desc	prio
+unk	Unsorted	Not yet triaged	5
+core	Core/Engine	Apex engine main loop, memory, jobs, hashing	3
+io	Archives & Files	TAB/ARC archives, ADF/SARC/RTPC resource formats, streaming	2
+data	Game Data	ADF-driven tuning tables, item/vehicle/upgrade definitions	1
+vehicle	Vehicles	Magnum Opus, car handling, ramming, boarding, upgrades	1
+combat	Combat	Melee (Freeflow-style), shotgun, harpoon/Thunderpoon, damage	1
+ai	AI	War Boys, convoys, Top Dogs, pursuit, faction behaviour	1
+world	World & Territory	Regions, threat level, outposts, scavenging locations, weather/sandstorms	1
+econ	Economy & Progression	Scrap, water, fuel, food, stronghold projects, Griffa upgrades	1
+player	Player	Max controller, health, stamina, traversal, inventory	1
+ui	UI/HUD	Menus, HUD, map (Scaleform/GFx)	3
+save	Save/Load	Profile and world state serialization	2
+script	Scripting	Missions, events, story flow	2
+render	Rendering	D3D11 renderer, shaders, particles (not ported: MC renders)	5
+physics	Physics	Collision, rigid bodies, vehicle dynamics solver	2
+anim	Animation	Skeletal anim, blend trees	4
+audio	Audio	FMOD Ex/Event glue (skip middleware itself)	4
+input	Input & Camera	Input mapping, camera rigs	3
+thirdparty	Third-party	CRT, STL, FMOD, Bink, Galaxy, zlib, Scaleform, Havok: status=skip	5
+compiler	Compiler-generated	EH unwind/catch funclets, thunks, deleting dtors: status=skip	5
