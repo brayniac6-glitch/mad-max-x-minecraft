@@ -1,2 +1,2 @@
-# mad-max-x-minecraft
-Mad Max x Minecraft
+# mad-max-
+Mad Max 
