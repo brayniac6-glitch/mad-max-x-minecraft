@@ -22,9 +22,11 @@ namespace madcraft::Collision
 		struct Column
 		{
 			float heights[kRegion + 1][kRegion + 1];  // MC y at each corner, kNoGround = miss
-			float scannedFrom{ 0 };                   // MC y the rays started at
-			int   next{ 0 };                          // corners done so far (scan in progress)
-			bool  complete{ false };
+			float         scannedFrom{ 0 };           // MC y the rays started at
+			int           next{ 0 };                  // corners done so far (scan in progress)
+			bool          complete{ false };
+			int           misses{ 0 };                // corners without ground in the last scan
+			std::uint64_t doneMs{ 0 };
 		};
 
 		std::unordered_map<std::uint64_t, Column> columns;
@@ -213,24 +215,36 @@ namespace madcraft::Collision
 					}
 					const int rx = prx + dx, rz = prz + dz;
 					auto&     col = columns[Key(rx, rz)];
-					if (col.complete && std::abs(col.scannedFrom - fromY) < kRescanShift) {
+					// Done, unless the player has moved well up/down since, or it had misses: Mad Max
+					// streams its physics in around the player, so ground scanned too early (loading,
+					// just after a teleport) isn't there yet. Those retry every few seconds.
+					const bool stale = col.misses > 0 && ::GetTickCount64() - col.doneMs > 3000;
+					if (col.complete && std::abs(col.scannedFrom - fromY) < kRescanShift && !stale) {
+						continue;
+					}
+					// At most every 2 s per column (a falling player would otherwise rescan everything
+					// every frame).
+					if (col.complete && ::GetTickCount64() - col.doneMs < 2000) {
 						continue;
 					}
 					if (col.complete || col.next == 0) {
 						col.complete = false;
 						col.next = 0;
+						col.misses = 0;
 						col.scannedFrom = fromY;
 					}
 					constexpr int kCorners = (kRegion + 1) * (kRegion + 1);
 					while (col.next < kCorners) {
 						const int cz = col.next / (kRegion + 1), cx = col.next % (kRegion + 1);
 						col.heights[cz][cx] = ProbeCorner(double(rx * kRegion + cx), double(rz * kRegion + cz), col.scannedFrom);
+						col.misses += col.heights[cz][cx] == kNoGround ? 1 : 0;
 						++col.next;
 						if (elapsedMs() > kBudgetMs) {
 							return;
 						}
 					}
 					col.complete = true;
+					col.doneMs = ::GetTickCount64();
 					SendColumn(rx, rz, col, a_feet.y);
 				}
 			}

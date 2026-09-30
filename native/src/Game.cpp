@@ -38,6 +38,10 @@ namespace madcraft
 		std::int64_t  lastQpc = 0;
 		std::atomic<DWORD> renderThread{ 0 };
 
+		McVec lastSafe{};
+		bool  haveLastSafe = false;
+		int   rescueFrames = 0;
+
 		// Game-camera look (see Tick): the calibrated forward axis (row*2 + negated), -1 = unknown.
 		const bool useGameCamera = IniBool("Camera", "bUseGameCamera", true);
 		int        camAxis = -1;
@@ -347,7 +351,26 @@ namespace madcraft
 			st.mcCrosshair = puppet && mc.cameraMode == 0 && !st.mcScreenOpen && !st.gameMenuOpen;
 			st.mcGuiScale = haveMc ? static_cast<int>(mc.guiScale) : 0;
 
-			if (puppet) {
+			// Fall rescue: the collision field can have a hole (ground not streamed in yet). Minecraft
+			// falling well below where it last stood puts Max back there and resyncs Minecraft.
+			if (puppet && (mc.flags & proto::kMcOnGround)) {
+				lastSafe = { mc.x, mc.y, mc.z };
+				haveLastSafe = true;
+			}
+			if (puppet && haveLastSafe && !(mc.flags & proto::kMcOnGround) && !(mc.flags & proto::kMcFlying) && mc.y < lastSafe.y - 6.0) {
+				logger::info("fall rescue: Minecraft fell to {:.1f}, back to {:.1f} {:.1f} {:.1f}", mc.y, lastSafe.x, lastSafe.y, lastSafe.z);
+				{
+					std::lock_guard g{ poseLock };
+					pose = { true, MadMax::FromMc(lastSafe.x, lastSafe.y + 0.1, lastSafe.z), pose.heading };
+				}
+				rescueFrames = 3;  // let the game thread put Max back, then teleport Minecraft to him
+			}
+			if (rescueFrames > 0) {
+				if (--rescueFrames == 0) {
+					teleportPending = true;
+					haveLastSet = false;
+				}
+			} else if (puppet) {
 				// What Max actually did since our last write: Mad Max's own movement fighting ours
 				// shows up as Max lagging where we put him.
 				// The write itself happens on Mad Max's game thread (GameThreadTick, from its input
@@ -391,7 +414,7 @@ namespace madcraft
 
 				lastSet = { mc.x, mc.y, mc.z };
 				haveLastSet = true;
-			} else {
+			} else if (!puppet) {
 				std::lock_guard g{ poseLock };
 				pose.pending = false;
 				if (inGame) {
