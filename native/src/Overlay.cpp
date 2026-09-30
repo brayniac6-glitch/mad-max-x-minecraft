@@ -2,6 +2,7 @@
 // screens arrive as a premultiplied RGBA frame in shared memory and are drawn over Mad Max's back buffer.
 #include <MinHook.h>
 #include "Game.h"
+#include "WorldRender.h"
 
 #include <d3dcompiler.h>
 
@@ -384,6 +385,10 @@ float4 PSMain(VSOut i) : SV_Target {
 					}
 				}
 				Game::Tick();
+				// Minecraft's world things (blocks, Steve, items) go under its hand and HUD.
+				if (Link::Get().Valid() && InitResources(a_swapChain)) {
+					WorldRender::Draw(device, context, a_swapChain);
+				}
 				DrawOverlay(a_swapChain);
 			} catch (...) {
 			}

@@ -41,6 +41,9 @@ namespace madcraft
 		// Mad Max's render camera ([Hooks] CameraMatrix): position and the direction it looks, in Mad
 		// Max world space. Which matrix row is "forward" is found at runtime (see Game.cpp).
 		bool GetCameraMatrix(float (&a_m)[16]);
+		// The same camera's world -> clip matrix (row vectors: clip = p * M), for drawing into Mad
+		// Max's frame. It sits 0x180 after the world matrix ([141715F90]+0x5E0 +0x1D4).
+		bool GetCameraViewProj(float (&a_m)[16]);
 
 		// Mad Max's physics raycast against the static world only (terrain, buildings, rocks), in Mad
 		// Max world space. Game thread only. Returns false on a miss or when [Hooks] Raycast* aren't set.

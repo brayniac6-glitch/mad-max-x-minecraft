@@ -381,6 +381,20 @@ namespace madcraft
 			return true;
 		}
 
+		bool GetCameraViewProj(float (&a_m)[16])
+		{
+			std::uintptr_t addr = 0;
+			if (!Resolve(cameraMatrix, addr) || !SafeRead(addr + 0x180, a_m, sizeof(a_m))) {
+				return false;
+			}
+			for (const float v : a_m) {
+				if (!std::isfinite(v)) {
+					return false;
+				}
+			}
+			return a_m[15] != 0.0f || a_m[11] != 0.0f;  // a projection has w from z
+		}
+
 		bool RaycastAvailable()
 		{
 			return physicsSystem.valid && raycastFn.valid && staticFilterCtor.valid;

@@ -34,6 +34,10 @@ namespace madcraft
 		std::atomic<int> viewportW{ 1920 };
 		std::atomic<int> viewportH{ 1080 };
 
+		// Where Steve's body is drawn (Minecraft coords): Max's feet this frame. Render thread.
+		double bodyX{ 0.0 }, bodyY{ 0.0 }, bodyZ{ 0.0 };
+		bool   bodyValid{ false };
+
 		std::atomic<bool> mcCrosshair{ false };
 		std::atomic<int>  mcGuiScale{ 0 };
 

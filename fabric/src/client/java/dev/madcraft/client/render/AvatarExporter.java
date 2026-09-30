@@ -80,6 +80,7 @@ import org.jspecify.annotations.Nullable;
  */
 final class AvatarExporter implements SubmitNodeCollector {
 	// Vertex flags: cutout, full-detail texture, lit by its own faces / without a normal / blended.
+	private static final boolean ALWAYS_AVATAR = Boolean.parseBoolean(System.getProperty("madcraft.alwaysAvatar", "true"));
 	private static final int SOLID = 1 | 8 | (7 << 4);
 	private static final int PARTICLE = 1 | 8;
 	private static final int PARTICLE_BLENDED = 2 | 8;
@@ -142,7 +143,9 @@ final class AvatarExporter implements SubmitNodeCollector {
 		this.atlas = atlas;
 		var player = minecraft.player;
 		Camera camera = minecraft.gameRenderer.mainCamera();
-		if (player == null || !camera.isDetached()) {
+		// Mad Max's camera is its own third-person camera, so the body is always seen there (SkyCraft
+		// only sent it in Minecraft's F5 views). -Dmadcraft.alwaysAvatar=false restores that.
+		if (player == null || (!ALWAYS_AVATAR && !camera.isDetached())) {
 			this.sendEmpty(Proto.REN_AVATAR, false);
 			return;
 		}

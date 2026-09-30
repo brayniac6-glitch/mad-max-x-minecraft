@@ -242,6 +242,8 @@ namespace madcraft
 			const bool inGame = MadMax::GetPlayerFeet(feet);
 			const bool driving = inGame && MadMax::InVehicle();
 			const auto feetMc = MadMax::ToMc(feet);
+			st.bodyValid = inGame;
+			st.bodyX = feetMc.x, st.bodyY = feetMc.y, st.bodyZ = feetMc.z;
 
 			// Mad Max moved Max itself (fast travel, cutscene, loading a save): resync Minecraft.
 			if (!inGame) {
