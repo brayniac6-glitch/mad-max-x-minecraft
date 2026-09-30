@@ -38,9 +38,11 @@ namespace madcraft
 		std::int64_t  lastQpc = 0;
 		std::atomic<DWORD> renderThread{ 0 };
 
-		McVec lastSafe{};
-		bool  haveLastSafe = false;
-		int   rescueFrames = 0;
+		McVec              lastSafe{};
+		bool               haveLastSafe = false;
+		int                rescueFrames = 0;
+		std::uint64_t      lastRescueMs = 0;
+		std::atomic<float> groundUnderMax{ -1.0e30f };  // MC y of Mad Max's ground under Max (game thread)
 
 		// Game-camera look (see Tick): the calibrated forward axis (row*2 + negated), -1 = unknown.
 		const bool useGameCamera = IniBool("Camera", "bUseGameCamera", true);
@@ -199,6 +201,11 @@ namespace madcraft
 			Vec3 feet{};
 			if (State().mcInWorld && Collision::Available() && MadMax::GetPlayerFeet(feet)) {
 				Collision::Update(MadMax::ToMc(feet));
+				// The ground under Max, for the fall rescue: from well above, so a Max already sunk
+				// below it still finds it.
+				Vec3 hit{};
+				const Vec3 above{ feet.x, feet.y + 30.0f, feet.z }, below{ feet.x, feet.y - 60.0f, feet.z };
+				groundUnderMax = MadMax::RaycastStatic(above, below, hit) ? static_cast<float>(MadMax::ToMc(hit).y) : -1.0e30f;
 			}
 		}
 
@@ -359,11 +366,18 @@ namespace madcraft
 				lastSafe = { mc.x, mc.y, mc.z };
 				haveLastSafe = true;
 			}
-			if (puppet && haveLastSafe && !(mc.flags & proto::kMcOnGround) && !(mc.flags & proto::kMcFlying) && mc.y < lastSafe.y - 6.0) {
-				logger::info("fall rescue: Minecraft fell to {:.1f}, back to {:.1f} {:.1f} {:.1f}", mc.y, lastSafe.x, lastSafe.y, lastSafe.z);
+			// Only a fall THROUGH Mad Max's ground (a hole in the collision), never an ordinary drop
+			// off a ledge: Minecraft well below the ground the game thread measured under Max. Once,
+			// then a cooldown.
+			const float ground = groundUnderMax.load();
+			if (puppet && rescueFrames == 0 && ::GetTickCount64() - lastRescueMs > 2000 && ground > -1.0e29f &&
+				!(mc.flags & proto::kMcOnGround) && !(mc.flags & proto::kMcFlying) && mc.y < ground - 2.0) {
+				lastRescueMs = ::GetTickCount64();
+				const McVec target = haveLastSafe ? lastSafe : McVec{ mc.x, double(ground) + 0.1, mc.z };
+				logger::info("fall rescue: Minecraft at {:.1f} is under the ground ({:.1f}); back to {:.1f} {:.1f} {:.1f}", mc.y, ground, target.x, target.y, target.z);
 				{
 					std::lock_guard g{ poseLock };
-					pose = { true, MadMax::FromMc(lastSafe.x, lastSafe.y + 0.1, lastSafe.z), pose.heading };
+					pose = { true, MadMax::FromMc(target.x, target.y + 0.1, target.z), pose.heading };
 				}
 				rescueFrames = 3;  // let the game thread put Max back, then teleport Minecraft to him
 			}
