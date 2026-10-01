@@ -8,21 +8,7 @@ Based on [SkyCraft](https://github.com/chasmlol/SkyCraft), which does the same f
 
 ## Features
 
-- **Be Steve.** Max is hidden and Minecraft's player takes his place: first person (your Minecraft
-  hand and items) or F5 third person (Steve with your armour and held items).
-- **Minecraft movement on Mad Max's ground.** Terrain, rocks, buildings, ships and wrecks are solid.
-- **Build in the wasteland.** Placed blocks stay put in Mad Max's world and hide properly behind its
-  buildings and rocks.
-- **Combat.** Minecraft weapons hurt Mad Max's NPCs, scaled like hitting a Minecraft mob (a wooden
-  sword takes five hits, a diamond sword three). Crits, Sharpness, Strength, the attack cooldown and
-  bows all count.
-- **Dynamic light.** Torches, lanterns, glowstone, fire and lava light up Mad Max's own world, and so
-  does a torch in your hand. Steve, your hand and your blocks darken in Mad Max's shadows, bunkers
-  and nights.
-- **Cars.** Press **F** at a car to get in and drive with Mad Max's controls. **F5** switches between
-  first person from the driver's seat and Mad Max's chase camera.
-- **Survival or creative, your inventory, your rules.** It's a real Minecraft world (the "MadCraft"
-  world) that follows you around Mad Max.
+ TO ACTUALLY PLAY AS STEVE PRESS F8 THAT ALLOWS YOU TO ACTUALLY MOVE AROUND IN THE WORLD IF YOU GET STUCK AT ANY POINY PRESS F8 AGIAN AND YOU WILL BE REGULAR MAX (But the steve model will be on top of him)
 
 ## What you need
 
