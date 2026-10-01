@@ -50,6 +50,45 @@ namespace madcraft::HideMax
 			return dx * dx + dz * dz < 0.8f * 0.8f && dy > -0.6f && dy < 2.2f;
 		}
 
+		// Max's gear (canteen, holster, ...) is drawn by NGraphicsEngine::CRenderBlockGeneralMM like any
+		// prop, so only what sits ON his body goes: close beside him and between hip and head height. A
+		// crate he stands on or a barrel next to him stays.
+		DrawFn            origGearMain = nullptr;
+		DrawFn            origGearOther = nullptr;
+		std::atomic<int>  loggedGear{ 0 };
+
+		bool IsMaxGear(void* a_instance)
+		{
+			if (!hiding || reinterpret_cast<std::uintptr_t>(a_instance) < 0x10000) {
+				return false;
+			}
+			float t[3];
+			if (!ReadPosition(a_instance, t)) {
+				return false;
+			}
+			const float dx = t[0] - maxX, dy = t[1] - maxY, dz = t[2] - maxZ;
+			const bool  gear = dx * dx + dz * dz < 0.6f * 0.6f && dy > 0.2f && dy < 2.0f;
+			if (gear && loggedGear < 6) {
+				++loggedGear;
+				logger::info("hide Max: hiding gear at ({:.2f}, {:.2f}, {:.2f}), {:.2f} m up", t[0], t[1], t[2], dy);
+			}
+			return gear;
+		}
+
+		void __fastcall HookGearMain(void* a_block, void* a_context, void* a_instance)
+		{
+			if (!IsMaxGear(a_instance)) {
+				origGearMain(a_block, a_context, a_instance);
+			}
+		}
+
+		void __fastcall HookGearOther(void* a_block, void* a_context, void* a_instance)
+		{
+			if (!IsMaxGear(a_instance)) {
+				origGearOther(a_block, a_context, a_instance);
+			}
+		}
+
 		void __fastcall HookMain(void* a_block, void* a_context, void* a_instance)
 		{
 			if (!IsMax(a_instance)) {
@@ -88,6 +127,12 @@ namespace madcraft::HideMax
 		ok = ok && MH_CreateHook(main, reinterpret_cast<void*>(&HookMain), reinterpret_cast<void**>(&origMain)) == MH_OK && MH_EnableHook(main) == MH_OK;
 		ok = ok && MH_CreateHook(other, reinterpret_cast<void*>(&HookOther), reinterpret_cast<void**>(&origOther)) == MH_OK && MH_EnableHook(other) == MH_OK;
 		logger::info("hide Max: character draws {}", ok ? "hooked" : "not hooked ([Hooks] CharacterDraw* missing or hook failed)");
+		void* gearMain = Address("GearDrawMain");
+		void* gearOther = Address("GearDrawOther");
+		bool  gearOk = gearMain && gearOther;
+		gearOk = gearOk && MH_CreateHook(gearMain, reinterpret_cast<void*>(&HookGearMain), reinterpret_cast<void**>(&origGearMain)) == MH_OK && MH_EnableHook(gearMain) == MH_OK;
+		gearOk = gearOk && MH_CreateHook(gearOther, reinterpret_cast<void*>(&HookGearOther), reinterpret_cast<void**>(&origGearOther)) == MH_OK && MH_EnableHook(gearOther) == MH_OK;
+		logger::info("hide Max: gear draws {}", gearOk ? "hooked" : "not hooked ([Hooks] GearDraw* missing or hook failed)");
 	}
 
 	void Update(bool a_hide, const Vec3& a_feet)
