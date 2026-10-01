@@ -69,6 +69,26 @@ namespace madcraft
 		// iCharacterDamageSlot, what the game's InflictDamage script command calls, H10): health,
 		// hit reactions, death. Game thread only. a_dealt: what the game applied after its modifiers.
 		bool DamageCharacter(std::uintptr_t a_object, float a_amount, float& a_dealt);
+		// Sets a character's or breakable object's health directly through the game's own setter
+		// ([Hooks] SetHealthFunction, CDamageable FUN_1401BE8A0): its death/destruction runs at 0, and
+		// invulnerable targets stay as they are. For targets the damage entry turns down. Game thread.
+		bool SetHealth(std::uintptr_t a_object, float a_health);
+		// Health / max health of anything built on CDamageable (characters, breakable objects).
+		bool ReadHealth(std::uintptr_t a_object, float& a_health, float& a_max);
+		// A game object's world position (its world matrix: the first plausible one of the CDamageable
+		// layouts, +0x1C8 for objects, +0x1D8 for characters).
+		bool ReadObjectPosition(std::uintptr_t a_object, Vec3& a_out);
+
+		// Live objects whose first qword is one of a_vtables (a scan of the game's heap: slow, run it
+		// off the game thread). Each hit: the object and which vtable it has.
+		struct ObjectHit
+		{
+			std::uintptr_t object;
+			std::size_t    which;
+		};
+		std::vector<ObjectHit> FindObjectsByVtable(const std::vector<std::uintptr_t>& a_vtables, std::size_t a_maxHits);
+		// MadMax.exe's base address (for "MadMax.exe+..." values).
+		std::uintptr_t ModuleBase();
 
 		// Mad Max world <-> Minecraft blocks. Scale and axis flips come from [World] in the ini
 		// until they are verified in game; Apex and Minecraft are both Y-up.

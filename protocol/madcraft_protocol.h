@@ -218,6 +218,7 @@ namespace madcraft::proto
 		kActorDead = 1u << 1,
 		kActorEssential = 1u << 2,
 		kActorInCombat = 1u << 3,
+		kActorObject = 1u << 4,     // not a person: a breakable object (fuel tank, explosive...); arrows break it
 	};
 
 	struct ActorRecord

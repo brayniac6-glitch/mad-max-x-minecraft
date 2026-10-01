@@ -59,6 +59,25 @@ namespace madcraft
 			return hits;
 		}
 
+		std::size_t ScanRegionMulti(const std::uintptr_t* a_begin, std::size_t a_count, const std::uintptr_t* a_values, std::size_t a_nValues,
+			MadMax::ObjectHit* a_hits, std::size_t a_maxHits)
+		{
+			std::size_t n = 0;
+			__try {
+				for (std::size_t i = 0; i < a_count && n < a_maxHits; ++i) {
+					const auto v = a_begin[i];
+					for (std::size_t k = 0; k < a_nValues; ++k) {
+						if (v == a_values[k]) {
+							a_hits[n++] = { reinterpret_cast<std::uintptr_t>(a_begin + i), k };
+							break;
+						}
+					}
+				}
+			} __except (EXCEPTION_EXECUTE_HANDLER) {
+			}
+			return n;
+		}
+
 		Chain playerMatrix;       // -> float[16] row-major world matrix (Apex: translation in row 3)
 		Chain vehicleFlag;        // -> non-zero byte while Max is in a vehicle
 		Chain setTransformIface;  // -> the object whose vtable holds SetTransform(this, const float m[16])
@@ -101,6 +120,19 @@ namespace madcraft
 			}
 		}
 		int   setTransformSlot = -1;
+		std::uintptr_t setHealthFn = 0;  // CDamageable's health setter (this, float health, const int* type)
+
+		bool CallSetHealth(std::uintptr_t a_fn, std::uintptr_t a_this, float a_health)
+		{
+			using Fn = void(__fastcall*)(void*, float, const std::int32_t*);
+			const std::int32_t type = 0;
+			__try {
+				reinterpret_cast<Fn>(a_fn)(reinterpret_cast<void*>(a_this), a_health, &type);
+				return true;
+			} __except (EXCEPTION_EXECUTE_HANDLER) {
+				return false;
+			}
+		}
 
 		// Characters (H09/H10). CCharacter layout: +0x180 max health, +0x184 health, +0xE8 dead,
 		// +0x1D8 world matrix. The manager's vector holds each character's +0x1C0 sub-object.
@@ -357,6 +389,11 @@ namespace madcraft
 				inflictorVtable = vt.valid ? vt.base : 0;
 			}
 			characterDamageSlot = static_cast<int>(IniDouble("Hooks", "iCharacterDamageSlot", -1));
+			{
+				Chain fn;
+				ParseChain(fn, "SetHealthFunction");
+				setHealthFn = fn.valid ? fn.base : 0;
+			}
 			setTransformSlot = static_cast<int>(IniDouble("Hooks", "iSetTransformSlot", -1));
 			scale = IniDouble("World", "fUnitsPerBlock", proto::kUnitsPerBlock);
 			signX = IniBool("World", "bFlipX", false) ? -1.0 : 1.0;
@@ -543,6 +580,74 @@ namespace madcraft
 				a_out.push_back({ obj, { m[12], m[13], m[14] }, std::atan2(m[8], m[10]), hp[1], hp[0], dead != 0 || hp[1] <= 0.0f });
 			}
 			return true;
+		}
+
+		bool SetHealth(std::uintptr_t a_object, float a_health)
+		{
+			return setHealthFn && CallSetHealth(setHealthFn, a_object, a_health);
+		}
+
+		bool ReadHealth(std::uintptr_t a_object, float& a_health, float& a_max)
+		{
+			float hp[2]{};
+			if (!SafeRead(a_object + 0x180, hp, sizeof(hp)) || !std::isfinite(hp[0]) || !std::isfinite(hp[1]) || hp[0] <= 0.0f || hp[0] > 1.0e7f) {
+				return false;
+			}
+			a_max = hp[0];
+			a_health = hp[1];
+			return true;
+		}
+
+		bool ReadObjectPosition(std::uintptr_t a_object, Vec3& a_out)
+		{
+			for (const std::uintptr_t off : { std::uintptr_t(0x1C8), std::uintptr_t(0x1D8) }) {
+				float m[16]{};
+				if (!SafeRead(a_object + off, m, sizeof(m))) {
+					continue;
+				}
+				bool ok = std::fabs(m[15] - 1.0f) < 1e-3f && std::fabs(m[3]) < 1e-3f && std::fabs(m[7]) < 1e-3f && std::fabs(m[11]) < 1e-3f;
+				for (int r = 0; ok && r < 3; ++r) {
+					const float len = std::sqrt(m[r * 4] * m[r * 4] + m[r * 4 + 1] * m[r * 4 + 1] + m[r * 4 + 2] * m[r * 4 + 2]);
+					ok = len > 0.05f && len < 20.0f;  // scaled objects allowed
+				}
+				ok = ok && std::isfinite(m[12]) && std::isfinite(m[13]) && std::isfinite(m[14]) && std::fabs(m[12]) < 1.0e5f && std::fabs(m[14]) < 1.0e5f &&
+				     !(m[12] == 0.0f && m[13] == 0.0f && m[14] == 0.0f);
+				if (ok) {
+					a_out = { m[12], m[13], m[14] };
+					return true;
+				}
+			}
+			return false;
+		}
+
+		std::uintptr_t ModuleBase()
+		{
+			return reinterpret_cast<std::uintptr_t>(::GetModuleHandleW(nullptr));
+		}
+
+		std::vector<ObjectHit> FindObjectsByVtable(const std::vector<std::uintptr_t>& a_vtables, std::size_t a_maxHits)
+		{
+			std::vector<ObjectHit>   hits(a_maxHits);
+			std::size_t              found = 0;
+			MEMORY_BASIC_INFORMATION mbi{};
+			ULONG_PTR                stackLo = 0, stackHi = 0;
+			::GetCurrentThreadStackLimits(&stackLo, &stackHi);
+			for (std::uintptr_t addr = 0x10000; found < hits.size() && ::VirtualQuery(reinterpret_cast<LPCVOID>(addr), &mbi, sizeof(mbi));
+				 addr = reinterpret_cast<std::uintptr_t>(mbi.BaseAddress) + mbi.RegionSize) {
+				const auto base = reinterpret_cast<std::uintptr_t>(mbi.BaseAddress);
+				if (base + mbi.RegionSize > stackLo && base < stackHi) {
+					continue;
+				}
+				if (mbi.State == MEM_COMMIT && mbi.Type == MEM_PRIVATE && (mbi.Protect & (PAGE_READWRITE | PAGE_WRITECOPY)) && !(mbi.Protect & PAGE_GUARD)) {
+					found += ScanRegionMulti(static_cast<const std::uintptr_t*>(mbi.BaseAddress), mbi.RegionSize / sizeof(std::uintptr_t), a_vtables.data(),
+						a_vtables.size(), hits.data() + found, hits.size() - found);
+				}
+			}
+			hits.resize(found);
+			// The list of vtables we searched for lives on the heap too.
+			const auto lo = reinterpret_cast<std::uintptr_t>(a_vtables.data()), hi = lo + a_vtables.size() * sizeof(std::uintptr_t);
+			std::erase_if(hits, [&](const ObjectHit& h) { return h.object >= lo && h.object < hi; });
+			return hits;
 		}
 
 		bool DamageCharacter(std::uintptr_t a_object, float a_amount, float& a_dealt)

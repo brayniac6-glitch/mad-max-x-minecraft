@@ -56,6 +56,7 @@ public final class Proto {
 	public static final int ACTOR_HOSTILE = 1;
 	public static final int ACTOR_DEAD = 1 << 1;
 	public static final int ACTOR_ESSENTIAL = 1 << 2;
+	public static final int ACTOR_OBJECT = 1 << 4;
 	public static final int ACTOR_IN_COMBAT = 1 << 3;
 
 	// Event ring (relative to OFF_EVENT_RING)
