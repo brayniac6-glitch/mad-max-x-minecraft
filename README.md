@@ -8,7 +8,7 @@ Based on [SkyCraft](https://github.com/chasmlol/SkyCraft), which does the same f
 
 ## Features
 
- TO ACTUALLY PLAY AS STEVE PRESS F8 THAT ALLOWS YOU TO ACTUALLY MOVE AROUND IN THE WORLD IF YOU GET STUCK AT ANY POINY PRESS F8 AGIAN AND YOU WILL BE REGULAR MAX (But the steve model will be on top of him)
+ TO ACTUALLY PLAY AS STEVE PRESS F8 THAT ALLOWS YOU TO ACTUALLY MOVE AROUND IN THE WORLD IF YOU GET STUCK AT ANY POINT PRESS F8 AGAIN AND YOU WILL BE REGULAR MAX (But the steve model will be on top of him)
 
 ## What you need
 
