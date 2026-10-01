@@ -48,7 +48,7 @@ cbuffer Frame : register(b0)
 	float4 sunColor;              // rgb
 	float4 ambient;               // rgb (the sky's fill light)
 	float4 fog;                   // x: start (m), y: end (m), z: max amount, w: on
-	float4 local;                 // x: scene mip, y: daylight brightness, z: darkest factor, w: on
+	float4 local;                 // x: Mad Max's light around the player (0..1), w: on
 	float4 screenInv;             // xy: 1 / screen size
 };
 cbuffer Object : register(b1)
@@ -136,13 +136,10 @@ float4 PSMain(VSOut i) : SV_Target
 	float3 avg = light.w > 0.5 ? sceneColor.SampleLevel(smoothSampler, float2(0.5, 0.5), 14.0).rgb : 0.5;
 	float  avgL = max(dot(avg, float3(0.2126, 0.7152, 0.0722)), 0.02);
 	float3 tint = light.w > 0.5 ? lerp(1.0, avg / avgL, 0.35) : 1.0;
-	// Mad Max's own light where this pixel is: its frame around it (blurred), against daylight. A
-	// block in a dark bunker or in the night goes dark; Minecraft's block light (torches) still shows.
-	float env = 1.0;
-	if (local.w > 0.5 && offset.w < 0.5 && light.w > 0.5) {
-		float3 around = sceneColor.SampleLevel(smoothSampler, i.pos.xy * screenInv.xy, local.x).rgb;
-		env = clamp(dot(around, float3(0.2126, 0.7152, 0.0722)) / local.y, local.z, 1.0);
-	}
+	// Mad Max's own light around the player (one smooth value for the area, measured from the frame):
+	// blocks in a dark bunker or in the night go dark; Minecraft's block light (torches) still shows.
+	// Not per pixel: what's behind a block on screen would show through as blotches.
+	float env = (local.w > 0.5 && offset.w < 0.5) ? local.x : 1.0;
 	float3 lit = light.z > 0.5 ? Lighting(i.light, n, ni != 0, tint, env) : max(Curve(i.light.y), light.y) * env;
 	float3 c = t.rgb * i.color.rgb * lit;
 	if (fog.w > 0.5) {
@@ -996,7 +993,6 @@ float4 PSMain(VSOut i) : SV_Target
 		// Minecraft's blocks and mobs darken with Mad Max's light around them (bBlockShade): full light
 		// at fShadeDaylight frame brightness, never below fBlockShadeMin.
 		const bool  blockShade = IniBool("Render", "bBlockShade", true);
-		const float shadeDaylight = std::max(0.02f, static_cast<float>(IniDouble("Render", "fShadeDaylight", 0.3)));
 		const float shadeDarkest = static_cast<float>(IniDouble("Render", "fBlockShadeMin", 0.08));
 
 		// A Minecraft point (blocks) -> camera-relative Mad Max position, in double precision.
@@ -1211,14 +1207,7 @@ float4 PSMain(VSOut i) : SV_Target
 			}
 			if (haveScene) {
 				SceneLight::MeasureShade(device, a_context, sceneTex, sceneW, sceneH, sceneFormat);
-				// The blurred frame around each pixel (a mip about 1/32 of the screen) lights our blocks.
-				float mip = 0.0f;
-				while ((sceneH >> (int(mip) + 1)) >= 34) {
-					mip += 1.0f;
-				}
-				fc.local[0] = mip;
-				fc.local[1] = shadeDaylight;
-				fc.local[2] = shadeDarkest;
+				fc.local[0] = std::clamp(SceneLight::SceneFactor(), shadeDarkest, 1.0f);
 				fc.local[3] = blockShade ? 1.0f : 0.0f;
 				fc.screenInv[0] = 1.0f / float(bbDesc.Width);
 				fc.screenInv[1] = 1.0f / float(bbDesc.Height);
