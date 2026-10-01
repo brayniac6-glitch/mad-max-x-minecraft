@@ -40,6 +40,114 @@ namespace madcraft
 		std::int64_t  lastQpc = 0;
 		std::atomic<DWORD> renderThread{ 0 };
 
+		// ---- Minecraft's ticks on our clock (SkyCraft's motion code, MIT chasmlol) ---------------
+		// Minecraft moves its player 20 times a second and publishes each tick (start and end feet,
+		// eye height, a QPC stamp). Sampling its per-frame position judders at our frame rate (and
+		// badly at speed: elytra), so the feet are interpolated between ticks on our own clock, a few
+		// milliseconds in the past so the next tick has always arrived (never extrapolated).
+		struct Tick
+		{
+			proto::McState s;
+			std::int64_t   at;     // when it happened (QPC), locked to the tick rhythm
+			int            slots;  // ticks since the previous one we saw (2+: we missed one)
+		};
+		std::deque<Tick>       tickHistory;
+		std::int64_t           lastTickFrameQpc = 0;
+		int                    stampOutliers = 0;
+		double                 renderDelayMs = 10.0;
+		std::array<double, 40> tickDue{};
+		std::size_t            tickDueNext = 0;
+		bool                   tickDueInit = false;
+
+		// Feet and eye for this frame (Minecraft coords). Falls back to Minecraft's own per-frame values.
+		void Interpolate(const proto::McState& a_mc, McVec& a_feet, McVec& a_eye)
+		{
+			a_feet = { a_mc.x, a_mc.y, a_mc.z };
+			a_eye = { a_mc.eyeX, a_mc.eyeY, a_mc.eyeZ };
+			if (a_mc.tickQpc == 0 || a_mc.tickMs <= 0.0f) {
+				return;
+			}
+			static const std::int64_t qpcFreq = [] { LARGE_INTEGER f; ::QueryPerformanceFrequency(&f); return f.QuadPart; }();
+			const double       qpcPerMs = double(qpcFreq) / 1000.0;
+			const std::int64_t period = std::max<std::int64_t>(1, std::llround(double(a_mc.tickMs) * qpcPerMs));
+			LARGE_INTEGER      now;
+			::QueryPerformanceCounter(&now);
+
+			if (tickHistory.empty() || tickHistory.back().s.tickQpc != a_mc.tickQpc) {
+				if (!tickHistory.empty() && a_mc.tickQpc < tickHistory.back().s.tickQpc) {
+					tickHistory.clear();  // Minecraft restarted
+				}
+				Tick tick{ a_mc, a_mc.tickQpc, 1 };
+				if (!tickHistory.empty()) {
+					auto&              last = tickHistory.back();
+					const std::int64_t n = std::llround(double(a_mc.tickQpc - last.at) / double(period));
+					const std::int64_t err = a_mc.tickQpc - (last.at + n * period);
+					if (n == 0 && last.slots >= 2) {
+						last.at -= period;  // two ticks in one Minecraft frame: the first belongs a tick earlier
+						last.slots -= 1;
+						tick.at = last.at + period;
+					} else if (n >= 1 && n <= 10 && std::abs(err) < period * 3 / 10) {
+						tick.at = last.at + n * period + err / 16;  // the rhythm is exact; the stamps are noisy
+						tick.slots = static_cast<int>(n);
+						stampOutliers = 0;
+					} else if (n <= 10 && ++stampOutliers < 3) {
+						tick.slots = static_cast<int>(std::max<std::int64_t>(n, 1));
+						tick.at = last.at + tick.slots * period;  // one odd stamp (a hitch): keep the rhythm
+					} else {
+						stampOutliers = 0;  // lost the rhythm: start over from this stamp
+					}
+				}
+				if (lastTickFrameQpc != 0) {
+					if (!tickDueInit) {
+						tickDue.fill(renderDelayMs - 1.0);
+						tickDueInit = true;
+					}
+					const double dueMs = double(lastTickFrameQpc - tick.at) / qpcPerMs;
+					if (dueMs < 30.0) {
+						tickDue[tickDueNext++ % tickDue.size()] = dueMs;
+					}
+				}
+				tickHistory.push_back(tick);
+				if (tickHistory.size() > 8) {
+					tickHistory.pop_front();
+				}
+			}
+
+			// Render just late enough that ticks have arrived (follows the last 2 s, slowly).
+			const double frameMs = lastTickFrameQpc != 0 ? double(now.QuadPart - lastTickFrameQpc) / qpcPerMs : 0.0;
+			lastTickFrameQpc = now.QuadPart;
+			if (tickDueInit) {
+				const double target = std::clamp(*std::ranges::max_element(tickDue) + 1.0, 4.0, 30.0);
+				const double dt = std::min(frameMs, 100.0) / 1000.0;
+				renderDelayMs = target > renderDelayMs ? std::min(target, renderDelayMs + 20.0 * dt) : std::max(target, renderDelayMs - 2.0 * dt);
+			}
+			const std::int64_t renderQpc = now.QuadPart - std::llround(renderDelayMs * qpcPerMs);
+
+			std::size_t i = 0;
+			for (std::size_t k = tickHistory.size(); k-- > 0;) {
+				if (tickHistory[k].at <= renderQpc) {
+					i = k;
+					break;
+				}
+			}
+			const Tick&  tick = tickHistory[i];
+			const Tick*  next = i + 1 < tickHistory.size() ? &tickHistory[i + 1] : nullptr;
+			const double ticks = double(renderQpc - tick.at) / double(period);
+			const double t = std::clamp(ticks, 0.0, 1.0);
+			const auto&  s = tick.s;
+			a_feet = { s.prevX + (s.curX - s.prevX) * t, s.prevY + (s.curY - s.prevY) * t, s.prevZ + (s.curZ - s.prevZ) * t };
+			double eyeHeight = s.tickEyeO + (s.tickEye - s.tickEyeO) * t;
+			if (ticks > 1.0 && next) {
+				// A tick we never saw: carry on from this tick's end to the next one's start.
+				const auto&  n = next->s;
+				const double gap = double(next->at - (tick.at + period));
+				const double u = gap > 0.0 ? std::clamp(double(renderQpc - (tick.at + period)) / gap, 0.0, 1.0) : 1.0;
+				a_feet = { s.curX + (n.prevX - s.curX) * u, s.curY + (n.prevY - s.curY) * u, s.curZ + (n.prevZ - s.curZ) * u };
+				eyeHeight = s.tickEye + (n.tickEyeO - s.tickEye) * u;
+			}
+			a_eye = { a_feet.x, a_feet.y + eyeHeight, a_feet.z };
+		}
+
 		McVec              lastSafe{};
 		bool               haveLastSafe = false;
 		int                rescueFrames = 0;
@@ -227,6 +335,11 @@ namespace madcraft
 
 			const bool mcAlive = link.McAlive();
 			const bool haveMc = mcAlive && link.ReadMcState(mc);
+			// Minecraft's player this frame, smoothed between its ticks on our clock (camera, Steve, Max).
+			McVec smoothFeet{}, smoothEye{};
+			if (haveMc) {
+				Interpolate(mc, smoothFeet, smoothEye);
+			}
 			if (mcAlive != mcWasAlive) {
 				logger::info("Minecraft {}", mcAlive ? "connected" : "gone");
 				link.ResetOverlay();
@@ -393,7 +506,7 @@ namespace madcraft
 					}
 					const float r0[3] = { cameraHanded * (r1[1] * r2[2] - r1[2] * r2[1]), cameraHanded * (r1[2] * r2[0] - r1[0] * r2[2]),
 						cameraHanded * (r1[0] * r2[1] - r1[1] * r2[0]) };
-					Vec3 eye = MadMax::FromMc(mc.eyeX, mc.eyeY, mc.eyeZ);
+					Vec3 eye = MadMax::FromMc(smoothEye.x, smoothEye.y, smoothEye.z);
 					if (mc.cameraMode != 0 && mc.cameraDistance > 0.0f) {
 						const float d = mc.cameraDistance * static_cast<float>(proto::kUnitsPerBlock);
 						eye = { eye.x - f[0] * d, eye.y - f[1] * d, eye.z - f[2] * d };
@@ -406,6 +519,11 @@ namespace madcraft
 			}
 			// Max's own model out of the picture while Minecraft drives (Steve is there instead).
 			HideMax::Update(puppet && hideMaxModel, feet);
+			// Steve's body where Minecraft's player is this frame (smoothed), not where Max got moved to a
+			// frame later on the game thread: at elytra speed that lag made Steve jump and trail the camera.
+			if (puppet) {
+				st.bodyX = smoothFeet.x, st.bodyY = smoothFeet.y, st.bodyZ = smoothFeet.z;
+			}
 			// Steve's body: always with Mad Max's camera; with Minecraft's, only in its F5 views.
 			st.bodyValid = inGame && (!firstPerson || !puppet || mc.cameraMode != 0);
 			st.mcGuiScale = haveMc ? static_cast<int>(mc.guiScale) : 0;
@@ -445,7 +563,7 @@ namespace madcraft
 				const bool haveBefore = MadMax::GetPlayerFeet(before);
 				{
 					std::lock_guard g{ poseLock };
-					pose = { true, MadMax::FromMc(mc.x, mc.y, mc.z), MadMax::McYawToHeading(mc.yaw) };
+					pose = { true, MadMax::FromMc(smoothFeet.x, smoothFeet.y, smoothFeet.z), MadMax::McYawToHeading(mc.yaw) };
 				}
 				Vec3 after{};
 				const bool haveAfter = MadMax::GetPlayerFeet(after);
