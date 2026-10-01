@@ -46,6 +46,11 @@ namespace madcraft
 		std::atomic<float>         shade{ 1.0f };
 		std::atomic<std::uint32_t> heldLight{ 0 };
 
+		// Max is in a car (Mad Max drives it with its own controls and camera; Steve sits in the seat),
+		// and until when Max is left to Mad Max after the car key (getting in plays its own animation).
+		std::atomic<bool>          driving{ false };
+		std::atomic<std::uint64_t> interactUntilMs{ 0 };
+
 		std::atomic<bool> mcCrosshair{ false };
 		std::atomic<int>  mcGuiScale{ 0 };
 

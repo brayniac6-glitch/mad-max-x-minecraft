@@ -60,6 +60,7 @@ namespace madcraft::proto
 		kSkyInGame = 1u << 0,    // a save is loaded and the player exists
 		kSkyMenuOpen = 1u << 1,  // a MadMax menu owns input; MC should drop held keys
 		kSkyLoading = 1u << 2,   // loading screen / cell transition in progress
+		kSkyDriving = 1u << 3,   // the player is in a Mad Max car: Minecraft's player sits and follows it
 	};
 
 	// Mad Max's water (lakes, rivers, the sea) around the player, for Minecraft to treat as its own

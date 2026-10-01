@@ -160,6 +160,8 @@ namespace madcraft
 		// Minecraft drives, like SkyCraft. Otherwise Mad Max's own camera sets the look.
 		const bool firstPerson = IniBool("Camera", "bFirstPerson", true);
 		const bool hideMaxModel = IniBool("Camera", "bHideMax", true);
+		// Steve in a car's seat: how far above Max's (seated) position his feet go, in blocks.
+		const float seatOffset = static_cast<float>(IniDouble("Vehicle", "fSeatOffsetY", 0.0));
 		const bool useGameCamera = !firstPerson && IniBool("Camera", "bUseGameCamera", true);
 		float      cameraHanded = 0.0f;  // +1/-1: Mad Max's camera rows satisfy row0 = s * (row1 x row2)
 		int        camAxis = -1;
@@ -310,7 +312,8 @@ namespace madcraft
 				std::lock_guard g{ poseLock };
 				p = pose;
 			}
-			if (p.pending && State().puppeting) {
+			// Not while Mad Max plays getting into a car (the car key): it moves Max to the door itself.
+			if (p.pending && State().puppeting && ::GetTickCount64() >= State().interactUntilMs) {
 				MadMax::SetPlayerPose(p.feet, p.heading);
 			}
 			// Mad Max's real ground around the player (raycasts must come from the game thread).
@@ -375,6 +378,18 @@ namespace madcraft
 			Vec3       feet{};
 			const bool inGame = MadMax::GetPlayerFeet(feet);
 			const bool driving = inGame && MadMax::InVehicle();
+			if (driving != st.driving) {
+				logger::info("vehicle: {}", driving ? "in a car (Mad Max's driving controls; F gets out)" : "on foot");
+			}
+			st.driving = driving;
+			// In the car, Minecraft's player faces where the car does (Steve sits facing forward).
+			if (driving) {
+				float heading = 0.0f;
+				if (MadMax::GetPlayerHeading(heading)) {
+					st.yaw = MadMax::HeadingToMcYaw(heading);
+					st.pitch = 0.0f;
+				}
+			}
 			const auto feetMc = MadMax::ToMc(feet);
 			st.bodyValid = inGame;
 			st.bodyX = feetMc.x, st.bodyY = feetMc.y, st.bodyZ = feetMc.z;
@@ -526,7 +541,9 @@ namespace madcraft
 				CameraDriver::Release();
 			}
 			// Max's own model out of the picture while Minecraft drives (Steve is there instead).
-			HideMax::Update(puppet && hideMaxModel, feet);
+			// Also in a car in Minecraft mode, and while Mad Max plays getting in (Steve is in the seat).
+			const bool interacting = ::GetTickCount64() < st.interactUntilMs;
+			HideMax::Update((puppet || ((driving || interacting) && !st.madMaxControls)) && hideMaxModel, feet);
 			// Steve's body where Minecraft's player is this frame (smoothed), not where Max got moved to a
 			// frame later on the game thread: at elytra speed that lag made Steve jump and trail the camera.
 			if (puppet) {
@@ -534,6 +551,9 @@ namespace madcraft
 			}
 			// Steve's body: always with Mad Max's camera; with Minecraft's, only in its F5 views.
 			st.bodyValid = inGame && (!firstPerson || !puppet || mc.cameraMode != 0);
+			if (driving) {
+				st.bodyY += seatOffset;
+			}
 			st.mcGuiScale = haveMc ? static_cast<int>(mc.guiScale) : 0;
 
 			// Fall rescue: the collision field can have a hole (ground not streamed in yet). Minecraft
@@ -625,7 +645,8 @@ namespace madcraft
 
 			// Tell Minecraft where Max is and where they're looking.
 			proto::MadState out{};
-			out.flags = (inGame ? proto::kSkyInGame : 0u) | (st.gameMenuOpen ? proto::kSkyMenuOpen : 0u) | (inGame ? 0u : proto::kSkyLoading);
+			out.flags = (inGame ? proto::kSkyInGame : 0u) | (st.gameMenuOpen ? proto::kSkyMenuOpen : 0u) | (inGame ? 0u : proto::kSkyLoading) |
+			            (driving ? proto::kSkyDriving : 0u);
 			out.worldId = 1;  // one open world (Mad Max has no separate worldspaces/interiors)
 			out.collisionEpoch = Collision::Available() ? Collision::Epoch() : epoch;
 			out.posX = feetMc.x;

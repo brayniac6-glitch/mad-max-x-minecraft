@@ -148,6 +148,7 @@ public final class Proto {
 	public static final int SKY_IN_GAME = 1;
 	public static final int SKY_MENU_OPEN = 1 << 1;
 	public static final int SKY_LOADING = 1 << 2;
+	public static final int SKY_DRIVING = 1 << 3;
 
 	// McState (relative to OFF_MC_STATE)
 	public static final long MS_SEQ = 0x00;

@@ -54,6 +54,11 @@ public final class MadClient {
 		return linked;
 	}
 
+	/** The player is in a Mad Max car: Minecraft's player sits and rides along with it. */
+	public static boolean driving() {
+		return linked && sky.inGame() && (sky.flags & dev.madcraft.link.Proto.SKY_DRIVING) != 0;
+	}
+
 	/**
 	 * The sky light (0-15) Mad Max's light around the player allows: lower in its shadows,
 	 * interiors and nights (MadState.shade), 15 when not linked.
@@ -308,6 +313,15 @@ public final class MadClient {
 				holdPos = player.position();
 			}
 			teleportPending = true;
+		}
+		if (driving() && !sky.loading()) {
+			// In a Mad Max car: ride along (no walking, falling or fall damage of our own).
+			player.setDeltaMovement(Vec3.ZERO);
+			player.setPos(sky.x, sky.y, sky.z);
+			player.resetFallDistance();
+			holdPos = null;
+			holdSince = 0;
+			return;
 		}
 		if (holdPos == null) {
 			holdSince = 0;

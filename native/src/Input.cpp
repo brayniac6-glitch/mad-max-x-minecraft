@@ -64,6 +64,18 @@ namespace madcraft
 		std::atomic<float>                            lookDx{ 0.0f }, lookDy{ 0.0f };
 		std::atomic<bool>                             f8Down{ false };
 
+		// The car key ([Input] sCarKey, default F): in Minecraft mode it presses Mad Max's own
+		// get-in / get-out / interact key ([Input] sMadMaxCarKey, default E) for a moment, so cars
+		// work without leaving Minecraft mode (Minecraft's E is its inventory).
+		std::uint32_t              carKey = 0x21;
+		std::uint32_t              madMaxCarKey = 0x12;
+		std::uint64_t              carHoldMs = 300;
+		std::atomic<std::uint64_t> injectUntilMs{ 0 };
+		bool                       carDown = false;
+		bool                       injectedDown = false;  // buffered: the press we added is down
+
+		bool Injecting() { return ::GetTickCount64() < injectUntilMs; }
+
 		// What Minecraft has been told is held (diagnostics), and how many presses it got.
 		std::array<std::atomic<bool>, 256> sentKeys{};
 		std::array<std::atomic<bool>, 8>   sentButtons{};
@@ -119,6 +131,16 @@ namespace madcraft
 				}
 				f8Down = a_down;
 				return;
+			}
+			if (carKey && a_dik == carKey && !st.madMaxControls) {
+				if (a_down && !carDown && !st.mcScreenOpen && !st.gameMenuOpen && (st.minecraftOwnsPlayer || st.driving)) {
+					const auto now = ::GetTickCount64();
+					injectUntilMs = now + carHoldMs;
+					st.interactUntilMs = now + 1500;
+					logger::info("vehicle: car key -> Mad Max's key {:02X} ({})", madMaxCarKey, st.driving ? "getting out" : "getting in / interacting");
+				}
+				carDown = a_down;
+				return;  // not Minecraft's (swap hands) and not Mad Max's own
 			}
 			if (!RouteToMinecraft()) {
 				return;
@@ -228,6 +250,14 @@ namespace madcraft
 						}
 					}
 				}
+				if (!State().madMaxControls) {
+					if (carKey && carKey != madMaxCarKey) {
+						keys[carKey] = 0;
+					}
+					if (Injecting()) {
+						keys[madMaxCarKey] = 0x80;
+					}
+				}
 			} else if (kind == Kind::kMouse && a_size >= sizeof(DIMOUSESTATE)) {
 				auto*     m = static_cast<DIMOUSESTATE*>(a_data);
 				const int nButtons = a_size >= sizeof(DIMOUSESTATE2) ? 8 : 4;
@@ -248,7 +278,7 @@ namespace madcraft
 			return a_hr;
 		}
 
-		HRESULT FilterData(void* a_this, LPDIDEVICEOBJECTDATA a_data, LPDWORD a_inOut, DWORD a_flags, HRESULT a_hr)
+		HRESULT FilterData(void* a_this, LPDIDEVICEOBJECTDATA a_data, LPDWORD a_inOut, DWORD a_flags, HRESULT a_hr, DWORD a_capacity)
 		{
 			if (FAILED(a_hr) || !a_data || !a_inOut || (a_flags & DIGDD_PEEK)) {
 				return a_hr;
@@ -274,6 +304,9 @@ namespace madcraft
 				if (kind == Kind::kKeyboard) {
 					OnKey(e.dwOfs, (e.dwData & 0x80) != 0);
 					keep = keep || (gameKeys[e.dwOfs & 0xFF] && !State().mcScreenOpen);
+					if (carKey && e.dwOfs == carKey && carKey != madMaxCarKey && !State().madMaxControls) {
+						keep = false;
+					}
 				} else {
 					const LONG v = static_cast<LONG>(e.dwData);
 					if ((e.dwOfs == DIMOFS_X || e.dwOfs == DIMOFS_Y) && State().cameraLook && !State().mcScreenOpen) {
@@ -296,6 +329,19 @@ namespace madcraft
 					a_data[kept++] = e;
 				}
 			}
+			// The car key's press of Mad Max's key, as events for a game reading the buffer.
+			if (kind == Kind::kKeyboard && !State().madMaxControls) {
+				const bool want = Injecting();
+				if (want != injectedDown && kept < a_capacity) {
+					DIDEVICEOBJECTDATA ev{};
+					ev.dwOfs = madMaxCarKey;
+					ev.dwData = want ? 0x80 : 0x00;
+					ev.dwTimeStamp = ::GetTickCount();
+					ev.dwSequence = kept ? a_data[kept - 1].dwSequence + 1 : 0;
+					a_data[kept++] = ev;
+					injectedDown = want;
+				}
+			}
 			*a_inOut = kept;
 			return a_hr;
 		}
@@ -304,11 +350,13 @@ namespace madcraft
 		HRESULT STDMETHODCALLTYPE GetStateA(void* a_this, DWORD a_size, LPVOID a_data) { return FilterState(a_this, a_size, a_data, origGetStateA(a_this, a_size, a_data)); }
 		HRESULT STDMETHODCALLTYPE GetDataW(void* a_this, DWORD a_size, LPDIDEVICEOBJECTDATA a_data, LPDWORD a_inOut, DWORD a_flags)
 		{
-			return FilterData(a_this, a_data, a_inOut, a_flags, origGetDataW(a_this, a_size, a_data, a_inOut, a_flags));
+			const DWORD capacity = a_inOut ? *a_inOut : 0;
+			return FilterData(a_this, a_data, a_inOut, a_flags, origGetDataW(a_this, a_size, a_data, a_inOut, a_flags), a_size == sizeof(DIDEVICEOBJECTDATA) ? capacity : 0);
 		}
 		HRESULT STDMETHODCALLTYPE GetDataA(void* a_this, DWORD a_size, LPDIDEVICEOBJECTDATA a_data, LPDWORD a_inOut, DWORD a_flags)
 		{
-			return FilterData(a_this, a_data, a_inOut, a_flags, origGetDataA(a_this, a_size, a_data, a_inOut, a_flags));
+			const DWORD capacity = a_inOut ? *a_inOut : 0;
+			return FilterData(a_this, a_data, a_inOut, a_flags, origGetDataA(a_this, a_size, a_data, a_inOut, a_flags), a_size == sizeof(DIDEVICEOBJECTDATA) ? capacity : 0);
 		}
 
 		template <class F>
@@ -341,6 +389,18 @@ namespace madcraft
 				return;
 			}
 			loaded = true;
+			auto hexKey = [](const char* a_key, std::uint32_t a_default) {
+				try {
+					const auto v = IniString("Input", a_key, "");
+					return v.empty() ? a_default : static_cast<std::uint32_t>(std::stoul(v, nullptr, 16) & 0xFF);
+				} catch (...) {
+					return a_default;
+				}
+			};
+			carKey = hexKey("sCarKey", 0x21);
+			madMaxCarKey = hexKey("sMadMaxCarKey", 0x12);
+			carHoldMs = static_cast<std::uint64_t>(std::max(50.0, IniDouble("Input", "iCarKeyHoldMs", 300)));
+			logger::info("input: car key {:02X} presses Mad Max's {:02X} for {} ms", carKey, madMaxCarKey, carHoldMs);
 			const auto list = IniString("Input", "sGameKeys", "");
 			if (list.empty()) {
 				return;
