@@ -111,6 +111,49 @@ extern "C" HRESULT WINAPI DllUnregisterServer()
 	return real ? real() : E_FAIL;
 }
 
+namespace
+{
+	// MadCraft needs a bought Mad Max (Steam or GOG install files next to the exe) of the build its
+	// hook addresses were found in (sheet/hooks.tsv): any other build would have them elsewhere, and
+	// patching the wrong code crashes the game. [Hooks] bAllowUnknownBuild = 1 skips the build check.
+	constexpr DWORD kKnownTimestamp = 0x565D5965;  // GOG MadMax.exe (PE TimeDateStamp)
+	constexpr DWORD kKnownImageSize = 0x1AAE000;
+
+	void Refuse(const std::wstring& a_why)
+	{
+		logger::error("MadCraft disabled: {}", std::filesystem::path(a_why).string());
+		std::thread([a_why] {
+			::MessageBoxW(nullptr, (a_why + L"\n\nMad Max runs normally; MadCraft is off. See the MadCraft README.").c_str(), L"MadCraft",
+				MB_OK | MB_ICONWARNING | MB_SETFOREGROUND);
+		}).detach();
+	}
+
+	bool CheckGame()
+	{
+		wchar_t exe[MAX_PATH]{};
+		::GetModuleFileNameW(nullptr, exe, MAX_PATH);
+		const auto dir = std::filesystem::path(exe).parent_path();
+		std::error_code ec;
+		const bool gog = std::filesystem::exists(dir / L"goggame-1296467424.info", ec);
+		const bool steam = std::filesystem::exists(dir / L"steam_api64.dll", ec) || std::filesystem::exists(dir / L"steam_appid.txt", ec);
+		if (!gog && !steam) {
+			Refuse(L"This doesn't look like a Steam or GOG copy of Mad Max. MadCraft needs a bought copy of the game.");
+			return false;
+		}
+		const auto* base = reinterpret_cast<const std::uint8_t*>(::GetModuleHandleW(nullptr));
+		const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(base);
+		const auto* nt = reinterpret_cast<const IMAGE_NT_HEADERS64*>(base + dos->e_lfanew);
+		const DWORD stamp = nt->FileHeader.TimeDateStamp, size = nt->OptionalHeader.SizeOfImage;
+		logger::info("Mad Max: {} copy, build {:08X} (image {:X})", gog ? "GOG" : "Steam", stamp, size);
+		if ((stamp != kKnownTimestamp || size != kKnownImageSize) && !madcraft::IniBool("Hooks", "bAllowUnknownBuild", false)) {
+			Refuse(std::format(L"This Mad Max build ({}, {:08X}) isn't supported yet. MadCraft was made for the GOG version (build {:08X}).",
+				gog ? L"GOG" : L"Steam", stamp, kKnownTimestamp));
+			return false;
+		}
+		return true;
+	}
+}
+
 BOOL APIENTRY DllMain(HMODULE a_module, DWORD a_reason, LPVOID)
 {
 	if (a_reason == DLL_PROCESS_ATTACH) {
@@ -123,6 +166,9 @@ BOOL APIENTRY DllMain(HMODULE a_module, DWORD a_reason, LPVOID)
 		}
 		madcraft::log::Open(madcraft::ModDir() / L"MadCraft.log");
 		logger::info("MadCraft 0.1.0 loading");
+		if (!CheckGame()) {
+			return TRUE;
+		}
 		if (MH_Initialize() != MH_OK) {
 			logger::error("MinHook failed to initialize; MadCraft disabled");
 			return TRUE;

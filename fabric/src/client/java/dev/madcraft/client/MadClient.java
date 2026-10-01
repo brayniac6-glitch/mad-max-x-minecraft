@@ -88,6 +88,9 @@ public final class MadClient {
 
 	/** Start of Minecraft.runTick: pull state and input from MadMax before anything else runs. */
 	public static void beginFrame() {
+		if (!Ownership.check(Minecraft.getInstance())) {
+			return;  // no bought, signed-in Minecraft: MadCraft stays off
+		}
 		MadLink.poll();
 		quitWithMadMax(Minecraft.getInstance());
 		if (START_HIDDEN && !startedHidden) {

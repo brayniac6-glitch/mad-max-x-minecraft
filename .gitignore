@@ -11,3 +11,5 @@ native/build/
 fabric/build/
 fabric/.gradle/
 fabric/run/
+dist/
+screenshot.png
