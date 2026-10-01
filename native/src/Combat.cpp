@@ -22,6 +22,10 @@ namespace madcraft::Combat
 		std::vector<std::uintptr_t> breakableVtables;
 		std::vector<std::string>    breakableNames;
 		std::uintptr_t              breakableDamageFn = 0;  // CDamageable's damage entry (slot 23), H10
+		// Diagnostics: more vtables counted (and their layout logged) without being used, to find which
+		// class camp props are ([Combat] sProbeVtables).
+		std::vector<std::uintptr_t> probeVtables;
+		std::vector<std::string>    probeNames;
 
 		struct Breakable
 		{
@@ -59,10 +63,10 @@ namespace madcraft::Combat
 		}
 
 		// "MadMax.exe+121AA58 CDamageableObject, MadMax.exe+..." -> vtables and names.
-		void ParseBreakables(const std::string& a_list)
+		void ParseVtables(const std::string& a_list, std::vector<std::uintptr_t>& a_vtables, std::vector<std::string>& a_names)
 		{
-			breakableVtables.clear();
-			breakableNames.clear();
+			a_vtables.clear();
+			a_names.clear();
 			std::size_t start = 0;
 			for (std::size_t i = 0; i <= a_list.size(); ++i) {
 				if (i != a_list.size() && a_list[i] != ',') {
@@ -82,8 +86,8 @@ namespace madcraft::Combat
 				}
 				name.erase(0, name.find_first_not_of(" \t"));
 				try {
-					breakableVtables.push_back(MadMax::ModuleBase() + std::stoull(rest, nullptr, 16));
-					breakableNames.push_back(name.empty() ? std::string("object") : name);
+					a_vtables.push_back(MadMax::ModuleBase() + std::stoull(rest, nullptr, 16));
+					a_names.push_back(name.empty() ? std::string("object") : name);
 				} catch (...) {
 				}
 			}
@@ -97,13 +101,30 @@ namespace madcraft::Combat
 					continue;
 				}
 				const auto start = NowMs();
-				const auto hits = MadMax::FindObjectsByVtable(breakableVtables, 8192);
+				std::vector<std::uintptr_t> all = breakableVtables;
+				all.insert(all.end(), probeVtables.begin(), probeVtables.end());
+				const auto             hits = MadMax::FindObjectsByVtable(all, 16384);
 				std::vector<Breakable> found;
-				std::vector<int>       perClass(breakableVtables.size(), 0);
+				std::vector<int>       perClass(breakableVtables.size(), 0), raw(all.size(), 0);
+				std::vector<std::uintptr_t> sample(all.size(), 0);
+				Vec3                   player{};
+				const bool             havePlayer = MadMax::GetPlayerFeet(player);
+				std::vector<float>     nearest(all.size(), 1.0e9f);
 				for (const auto& h : hits) {
+					++raw[h.which];
 					float hp = 0.0f, max = 0.0f;
 					Vec3  pos{};
-					if (MadMax::ReadHealth(h.object, hp, max) && MadMax::ReadObjectPosition(h.object, pos)) {
+					const bool healthy = MadMax::ReadHealth(h.object, hp, max), placed = MadMax::ReadObjectPosition(h.object, pos);
+					if (placed && havePlayer) {
+						const float d = std::hypot(pos.x - player.x, pos.z - player.z);
+						if (d < nearest[h.which]) {
+							nearest[h.which] = d;
+							sample[h.which] = h.object;
+						}
+					} else if (!sample[h.which]) {
+						sample[h.which] = h.object;
+					}
+					if (h.which < breakableVtables.size() && healthy && placed) {
 						found.push_back({ h.object, breakableVtables[h.which], h.which, pos });
 						++perClass[h.which];
 					}
@@ -112,13 +133,36 @@ namespace madcraft::Combat
 				for (std::size_t k = 0; k < perClass.size(); ++k) {
 					counts += std::format(" {} {}", breakableNames[k], perClass[k]);
 				}
+				// What each class looks like: raw count, the nearest one's distance, health, and which of
+				// our vtables sit around it (to tell the object's start from its sub-objects).
+				std::string probes;
+				for (std::size_t k = 0; k < all.size(); ++k) {
+					const auto& name = k < breakableNames.size() ? breakableNames[k] : probeNames[k - breakableNames.size()];
+					probes += std::format(" |{} {:X}: {} found", name, all[k] - MadMax::ModuleBase(), raw[k]);
+					if (!sample[k]) {
+						continue;
+					}
+					float hp = -1.0f, max = -1.0f;
+					MadMax::ReadHealth(sample[k], hp, max);
+					probes += std::format(", nearest {:.0f} m, health {:.1f}/{:.1f}, around it:", nearest[k] < 1.0e8f ? nearest[k] : -1.0f, hp, max);
+					for (const std::intptr_t off : { -0x1C0, -0xD8, -0x8, 0x8, 0xD8, 0x1C0 }) {
+						std::uintptr_t v = 0;
+						if (SafeRead(sample[k] + off, &v, sizeof(v))) {
+							for (std::size_t j = 0; j < all.size(); ++j) {
+								if (all[j] == v) {
+									probes += std::format(" [{:+X}]={:X}", off, v - MadMax::ModuleBase());
+								}
+							}
+						}
+					}
+				}
 				{
 					std::lock_guard g{ breakablesLock };
 					breakables = std::move(found);
 				}
 				static int logged = 0;
-				if (logged++ < 3 || logged % 20 == 0) {
-					logger::info("combat: breakable objects (heap scan, {} ms):{}", NowMs() - start, counts);
+				if (logged++ < 3 || logged % 10 == 0) {
+					logger::info("combat: breakable objects (heap scan, {} ms):{}{}", NowMs() - start, counts, probes);
 				}
 			}
 		}
@@ -240,6 +284,10 @@ namespace madcraft::Combat
 			                      (breakableDamageFn && SafeRead(k.object, &vt, sizeof(vt)) && SafeRead(vt + 23 * sizeof(void*), &fn, sizeof(fn)) && fn == breakableDamageFn);
 			if (standard) {
 				ok = MadMax::DamageCharacter(k.object, amount, dealt);
+				float now = 0.0f, m = 0.0f;
+				if (MadMax::ReadHealth(k.object, now, m)) {
+					dealt = before - now;  // what it actually took off (the return value isn't it)
+				}
 			}
 			// Turned down (only certain weapons count against it, e.g. War Criers): the game's own health
 			// setter instead, so its death or destruction still plays (invulnerable targets stay put).
@@ -269,7 +317,8 @@ namespace madcraft::Combat
 		objectHeight = static_cast<float>(IniDouble("Combat", "fObjectHeight", 2.5));
 		objectDrop = static_cast<float>(IniDouble("Combat", "fObjectDrop", 0.5));
 		objectScanMs = static_cast<std::uint64_t>(std::max(2.0, IniDouble("Combat", "fObjectScanSeconds", 12.0)) * 1000.0);
-		ParseBreakables(IniString("Combat", "sBreakableVtables", ""));
+		ParseVtables(IniString("Combat", "sBreakableVtables", ""), breakableVtables, breakableNames);
+		ParseVtables(IniString("Combat", "sProbeVtables", ""), probeVtables, probeNames);
 		if (const auto fnText = IniString("Combat", "sBreakableDamageFn", ""); fnText.find('+') != std::string::npos) {
 			try {
 				breakableDamageFn = MadMax::ModuleBase() + std::stoull(fnText.substr(fnText.find('+') + 1), nullptr, 16);
