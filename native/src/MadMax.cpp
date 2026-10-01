@@ -102,6 +102,41 @@ namespace madcraft
 		}
 		int   setTransformSlot = -1;
 
+		// Characters (H09/H10). CCharacter layout: +0x180 max health, +0x184 health, +0xE8 dead,
+		// +0x1D8 world matrix. The manager's vector holds each character's +0x1C0 sub-object.
+		Chain          characterList;  // -> {begin, end} of the manager's character vector
+		std::uintptr_t inflictorVtable = 0;
+		int            characterDamageSlot = -1;
+		std::uintptr_t characterEntryOffset = 0x1C0;
+
+		// The damage message the game passes around (CDamageInflictor, 0x20 bytes): +0x08 damage,
+		// +0x10 damage type (0 = untyped, as scripts send it), +0x14 source, +0x18 flags.
+		struct Inflictor
+		{
+			std::uintptr_t vtable;
+			float          damage;
+			std::uint32_t  pad0;
+			std::uint32_t  type;
+			std::uint32_t  source;
+			std::uint8_t   flag;
+			std::uint8_t   pad1[3];
+			std::uint32_t  extra;
+		};
+		static_assert(sizeof(Inflictor) == 0x20);
+
+		bool CallDamage(std::uintptr_t a_fn, std::uintptr_t a_this, Inflictor* a_hit, float& a_dealt)
+		{
+			using Fn = std::uint64_t(__fastcall*)(void*, void*);
+			__try {
+				const auto r = reinterpret_cast<Fn>(a_fn)(reinterpret_cast<void*>(a_this), a_hit);
+				const auto bits = static_cast<std::uint32_t>(r);
+				std::memcpy(&a_dealt, &bits, sizeof(a_dealt));
+				return true;
+			} __except (EXCEPTION_EXECUTE_HANDLER) {
+				return false;
+			}
+		}
+
 		// The game's SetTransform, SEH-guarded: a wrong slot in the ini must not take the game down.
 		bool CallSetTransform(std::uintptr_t a_fn, std::uintptr_t a_this, const float* a_m)
 		{
@@ -315,6 +350,13 @@ namespace madcraft
 					logger::info("collision: rays hit everything but characters and vehicles (ships, wrecks, props)");
 				}
 			}
+			ParseChain(characterList, "CharacterList");
+			{
+				Chain vt;
+				ParseChain(vt, "DamageInflictorVtable");
+				inflictorVtable = vt.valid ? vt.base : 0;
+			}
+			characterDamageSlot = static_cast<int>(IniDouble("Hooks", "iCharacterDamageSlot", -1));
 			setTransformSlot = static_cast<int>(IniDouble("Hooks", "iSetTransformSlot", -1));
 			scale = IniDouble("World", "fUnitsPerBlock", proto::kUnitsPerBlock);
 			signX = IniBool("World", "bFlipX", false) ? -1.0 : 1.0;
@@ -469,6 +511,54 @@ namespace madcraft
 			}
 			a_hit = { a_from.x + dx * fraction, a_from.y + dy * fraction, a_from.z + dz * fraction };
 			return true;
+		}
+
+		bool ListCharacters(std::vector<Character>& a_out)
+		{
+			a_out.clear();
+			std::uintptr_t vec = 0;
+			std::uintptr_t range[2]{};
+			if (!Resolve(characterList, vec) || !SafeRead(vec, range, sizeof(range)) || range[1] < range[0]) {
+				return false;
+			}
+			const std::size_t count = std::min<std::size_t>((range[1] - range[0]) / sizeof(std::uintptr_t), 2048);
+			std::vector<std::uintptr_t> entries(count);
+			if (count && !SafeRead(range[0], entries.data(), count * sizeof(std::uintptr_t))) {
+				return false;
+			}
+			for (const auto entry : entries) {
+				if (entry <= characterEntryOffset) {
+					continue;
+				}
+				const std::uintptr_t obj = entry - characterEntryOffset;
+				float                hp[2]{};  // max, current
+				float                m[16]{};
+				std::uint8_t         dead = 0;
+				if (!SafeRead(obj + 0x180, hp, sizeof(hp)) || !SafeRead(obj + 0x1D8, m, sizeof(m)) || !SafeRead(obj + 0xE8, &dead, 1)) {
+					continue;
+				}
+				if (!std::isfinite(hp[0]) || !std::isfinite(hp[1]) || hp[0] <= 0.0f || !std::isfinite(m[12]) || !std::isfinite(m[13]) || !std::isfinite(m[14])) {
+					continue;
+				}
+				a_out.push_back({ obj, { m[12], m[13], m[14] }, std::atan2(m[8], m[10]), hp[1], hp[0], dead != 0 || hp[1] <= 0.0f });
+			}
+			return true;
+		}
+
+		bool DamageCharacter(std::uintptr_t a_object, float a_amount, float& a_dealt)
+		{
+			a_dealt = 0.0f;
+			if (!inflictorVtable || characterDamageSlot < 0) {
+				return false;
+			}
+			std::uintptr_t vtbl = 0, fn = 0;
+			if (!SafeRead(a_object, &vtbl, sizeof(vtbl)) || !SafeRead(vtbl + sizeof(void*) * characterDamageSlot, &fn, sizeof(fn)) || !fn) {
+				return false;
+			}
+			Inflictor hit{};
+			hit.vtable = inflictorVtable;
+			hit.damage = a_amount;
+			return CallDamage(fn, a_object, &hit, a_dealt);
 		}
 
 		McVec ToMc(const Vec3& a_p)

@@ -1,4 +1,5 @@
 #include "CameraDriver.h"
+#include "Combat.h"
 #include "Game.h"
 #include "HideMax.h"
 
@@ -127,6 +128,7 @@ BOOL APIENTRY DllMain(HMODULE a_module, DWORD a_reason, LPVOID)
 			return TRUE;
 		}
 		madcraft::MadMax::Init();
+		madcraft::Combat::Init();
 		if (!madcraft::Link::Get().Create()) {
 			logger::error("MadCraft disabled: could not create shared memory");
 			return TRUE;

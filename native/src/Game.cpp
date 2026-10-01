@@ -2,6 +2,7 @@
 
 #include "CameraDriver.h"
 #include "Collision.h"
+#include "Combat.h"
 #include "HideMax.h"
 
 // The per-frame bridge, modelled on SkyCraft's Game.cpp (MIT, chasmlol): Mad Max tells Minecraft
@@ -320,6 +321,10 @@ namespace madcraft
 				// heightfield, so roofs and overhangs above him don't count).
 				const auto f = MadMax::ToMc(feet);
 				groundUnderMax = Collision::GroundAt(f.x, f.z);
+			}
+			// Minecraft weapons against Mad Max's NPCs: hits in, nearby characters out.
+			if (State().mcInWorld && MadMax::GetPlayerFeet(feet)) {
+				Combat::Update(feet);
 			}
 		}
 

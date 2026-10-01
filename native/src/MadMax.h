@@ -54,6 +54,22 @@ namespace madcraft
 		bool RaycastAvailable();
 		bool RaycastStatic(const Vec3& a_from, const Vec3& a_to, Vec3& a_hit);
 
+		// Every non-player character the game's character manager holds ([Hooks] CharacterList: its
+		// vector of registered characters, H09). Reads only; safe on any thread.
+		struct Character
+		{
+			std::uintptr_t object;  // the CCharacter
+			Vec3           feet;
+			float          heading;
+			float          health, maxHealth;
+			bool           dead;
+		};
+		bool ListCharacters(std::vector<Character>& a_out);
+		// Hits a character through its own damage entry (CCharacter vtable slot [Hooks]
+		// iCharacterDamageSlot, what the game's InflictDamage script command calls, H10): health,
+		// hit reactions, death. Game thread only. a_dealt: what the game applied after its modifiers.
+		bool DamageCharacter(std::uintptr_t a_object, float a_amount, float& a_dealt);
+
 		// Mad Max world <-> Minecraft blocks. Scale and axis flips come from [World] in the ini
 		// until they are verified in game; Apex and Minecraft are both Y-up.
 		McVec ToMc(const Vec3& a_p);
