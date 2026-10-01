@@ -206,11 +206,10 @@ namespace madcraft
 			Vec3 feet{};
 			if (State().mcInWorld && Collision::Available() && MadMax::GetPlayerFeet(feet)) {
 				Collision::Update(MadMax::ToMc(feet));
-				// The ground under Max, for the fall rescue: from well above, so a Max already sunk
-				// below it still finds it.
-				Vec3 hit{};
-				const Vec3 above{ feet.x, feet.y + 30.0f, feet.z }, below{ feet.x, feet.y - 60.0f, feet.z };
-				groundUnderMax = MadMax::RaycastStatic(above, below, hit) ? static_cast<float>(MadMax::ToMc(hit).y) : -1.0e30f;
+				// The ground Minecraft collides with under Max, for the fall rescue (the scanned
+				// heightfield, so roofs and overhangs above him don't count).
+				const auto f = MadMax::ToMc(feet);
+				groundUnderMax = Collision::GroundAt(f.x, f.z);
 			}
 		}
 

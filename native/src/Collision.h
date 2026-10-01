@@ -13,4 +13,7 @@ namespace madcraft::Collision
 	// Once per game frame with the player's feet (Minecraft coordinates): scans and streams the
 	// ground around them within a small time budget.
 	void Update(const McVec& a_feet);
+	// The ground Minecraft collides with at a column (Minecraft coords), from the scanned heightfield;
+	// below -1e29 when unknown. Game thread.
+	float GroundAt(double a_x, double a_z);
 }

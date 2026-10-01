@@ -41,18 +41,36 @@ namespace madcraft::Collision
 			return (std::uint64_t(std::uint32_t(a_rx)) << 32) | std::uint32_t(a_rz);
 		}
 
-		// One corner: straight down from above the player. MC coordinates in and out.
+		// One corner: straight down from above the player, MC coordinates in and out. Under a roof,
+		// an upper floor or an overhang (a hit more than a step above the player's feet) the ray goes
+		// on from just below it, so the player stands on the floor they're actually on, not the roof
+		// (SkyCraft's multi-hit columns). Only a surface with nothing found under it (a hill, a
+		// wall) stays as the ground above the feet.
 		float ProbeCorner(double a_x, double a_z, float a_fromY)
 		{
-			const Vec3 from = MadMax::FromMc(a_x, a_fromY, a_z);
-			const Vec3 to = MadMax::FromMc(a_x, a_fromY - kAbove - kBelow, a_z);
-			Vec3       hit{};
-			++raysCast;
-			if (!MadMax::RaycastStatic(from, to, hit)) {
-				return kNoGround;
+			const float feetY = a_fromY - kAbove;
+			const float bottom = a_fromY - kAbove - kBelow;
+			float       start = a_fromY;
+			float       first = kNoGround;
+			for (int layer = 0; layer < 3; ++layer) {
+				const Vec3 from = MadMax::FromMc(a_x, start, a_z);
+				const Vec3 to = MadMax::FromMc(a_x, bottom, a_z);
+				Vec3       hit{};
+				++raysCast;
+				if (!MadMax::RaycastStatic(from, to, hit)) {
+					return first;  // nothing further down: the overhang's top is all there is
+				}
+				++raysHit;
+				const float y = static_cast<float>(MadMax::ToMc(hit).y);
+				if (y <= feetY + 1.0f) {
+					return y;  // a floor at or below the feet: walkable
+				}
+				if (first == kNoGround) {
+					first = y;
+				}
+				start = y - 0.15f;  // look under that surface
 			}
-			++raysHit;
-			return static_cast<float>(MadMax::ToMc(hit).y);
+			return first;
 		}
 
 		void SendRegion(int a_rx, int a_ry, int a_rz, const Column& a_col)
@@ -146,6 +164,23 @@ namespace madcraft::Collision
 				SendRegion(a_rx, ry, a_rz, a_col);
 			}
 		}
+	}
+
+	float GroundAt(double a_x, double a_z)
+	{
+		const int rx = static_cast<int>(std::floor(a_x / kRegion)), rz = static_cast<int>(std::floor(a_z / kRegion));
+		const auto it = columns.find(Key(rx, rz));
+		if (it == columns.end() || !it->second.complete) {
+			return kNoGround;
+		}
+		const int   cx = std::clamp(static_cast<int>(std::floor(a_x - rx * kRegion)), 0, kRegion - 1);
+		const int   cz = std::clamp(static_cast<int>(std::floor(a_z - rz * kRegion)), 0, kRegion - 1);
+		const auto& h = it->second.heights;
+		float       best = kNoGround;
+		for (const float v : { h[cz][cx], h[cz][cx + 1], h[cz + 1][cx], h[cz + 1][cx + 1] }) {
+			best = std::max(best, v);
+		}
+		return best;
 	}
 
 	bool Available()
