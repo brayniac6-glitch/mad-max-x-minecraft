@@ -396,15 +396,38 @@ namespace madcraft
 					st.pitch = 0.0f;
 				}
 			}
-			// The car key's hand-off to Mad Max: over once Max is in the car (or nothing happened).
+			// The car key's hand-off to Mad Max (it only lets Max into a car under its own control),
+			// invisible: Minecraft's view stays until he's in the car. Over once he's in, or as soon as
+			// it's clear nothing is happening (no car here: Max doesn't start walking to a door).
+			static std::uint64_t handoffSeen = 0;
+			static Vec3          handoffFrom{};
+			static std::uint64_t handoffStartMs = 0;
 			if (const auto handoff = st.carHandoffUntilMs.load(); handoff != 0) {
-				if (driving || ::GetTickCount64() >= handoff) {
+				const auto now = ::GetTickCount64();
+				if (handoff != handoffSeen) {
+					handoffSeen = handoff;
+					handoffFrom = feet;
+					handoffStartMs = now;
+				}
+				const float moved = std::hypot(feet.x - handoffFrom.x, feet.z - handoffFrom.z);
+				const bool  idle = now - handoffStartMs > 900 && moved < 0.25f;
+				if (driving || now >= handoff || idle) {
 					st.carHandoffUntilMs = 0;
 					st.madMaxControls = false;
 					Input::ReleaseAll();
-					logger::info("vehicle: {}; controls: Minecraft", driving ? "in the car" : "no car got in");
+					logger::info("vehicle: {}", driving ? "in the car" : idle ? "no car to get into" : "didn't get in");
 				}
 			}
+			const bool handingOff = st.carHandoffUntilMs != 0;
+			// Where Max sits in this car (his transform is the seat), against the ground under it: the
+			// first-person eyes go a seated person's eye height above the seat, whatever the car.
+			static bool wasDriving = false;
+			if (driving && !wasDriving) {
+				const auto  f = MadMax::ToMc(feet);
+				const float ground = groundUnderMax.load();
+				logger::info("vehicle: seat {:.2f} blocks above the ground", ground > -1.0e29f ? float(f.y) - ground : -1.0f);
+			}
+			wasDriving = driving;
 			const bool carCam = driving && firstPerson && st.carFirstPerson && !st.madMaxControls && !st.gameMenuOpen;
 			if (carCam != st.carCam) {
 				logger::info("vehicle: {} camera", carCam ? "first-person" : "Mad Max's");
@@ -413,8 +436,8 @@ namespace madcraft
 			}
 			if (!carEyesLoaded) {
 				carEyesLoaded = true;
-				st.carEyeY = static_cast<float>(IniDouble("Vehicle", "fFirstPersonEyeY", 1.0));
-				st.carEyeForward = static_cast<float>(IniDouble("Vehicle", "fFirstPersonEyeForward", 0.4));
+				st.carEyeY = static_cast<float>(IniDouble("Vehicle", "fFirstPersonEyeY", 0.75));
+				st.carEyeForward = static_cast<float>(IniDouble("Vehicle", "fFirstPersonEyeForward", 0.1));
 			}
 			st.carCam = carCam;
 			const auto feetMc = MadMax::ToMc(feet);
@@ -539,7 +562,7 @@ namespace madcraft
 
 			// Minecraft's eyes as Mad Max's camera while Minecraft drives: first person, or its F5
 			// views (behind; in front looking back), pulled in by Minecraft's own zoom collision.
-			if (firstPerson && (puppet || carCam) && !st.gameMenuOpen) {
+			if (firstPerson && (puppet || carCam || handingOff) && !st.gameMenuOpen) {
 				const auto rc = MadMax::RenderCameraObject();
 				if (rc && cameraHanded == 0.0f) {
 					float gm[16];
@@ -581,7 +604,6 @@ namespace madcraft
 			// Max's own model out of the picture while Minecraft drives (Steve is there instead).
 			// Also in a car in Minecraft mode, and while Mad Max plays getting in (Steve is in the seat).
 			const bool interacting = ::GetTickCount64() < st.interactUntilMs;
-			const bool handingOff = st.carHandoffUntilMs != 0;
 			HideMax::Update((puppet || ((driving || interacting) && !st.madMaxControls) || handingOff) && hideMaxModel, feet);
 			// Steve's body where Minecraft's player is this frame (smoothed), not where Max got moved to a
 			// frame later on the game thread: at elytra speed that lag made Steve jump and trail the camera.
@@ -593,7 +615,7 @@ namespace madcraft
 			if (driving) {
 				st.bodyY += seatOffset;
 			}
-			if (carCam) {
+			if (carCam || (handingOff && mc.cameraMode == 0)) {
 				st.bodyValid = false;  // the camera is in his head
 			}
 			st.mcGuiScale = haveMc ? static_cast<int>(mc.guiScale) : 0;
