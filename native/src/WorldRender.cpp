@@ -80,6 +80,9 @@ VSOut VSMain(VSIn i)
 	VSOut o;
 	float3 rel = offset.xyz + float3(i.pos.x * axes.x, i.pos.y, i.pos.z * axes.z);
 	o.pos = mul(float4(rel, 1.0), viewProj);
+	if (axes.y > 0.5) {
+		o.pos.z = o.pos.w - o.pos.z;  // the matrix's depth is standard, Mad Max's buffer reversed: 1 - z
+	}
 	o.uv = i.uv;
 	o.color = i.color;
 	o.light = float2(i.light & 0xFF, (i.light >> 8) & 0xFF) / 15.0;
@@ -1159,6 +1162,30 @@ float4 PSMain(VSOut i) : SV_Target
 			}
 			const bool              reversed = sceneDepth.clear < 0.5f;
 			ID3D11DepthStencilView* dsv = sceneDepth.dsv;
+			// The matrix's own depth convention (SkyCraft's check): a point 2 m ahead vs 200 m ahead. If
+			// it's standard while Mad Max's buffer is reversed (the game flips it later in its renderer),
+			// our depth is flipped to match, or blocks would show through every wall.
+			{
+				const float fwd[3] = { -cam[8], -cam[9], -cam[10] };  // Mad Max cameras look along -row 2
+				auto        ndcZ = [&](float a_dist) {
+					const float p[3] = { fwd[0] * a_dist, fwd[1] * a_dist, fwd[2] * a_dist };
+					const float z = p[0] * fc.viewProj[0][2] + p[1] * fc.viewProj[1][2] + p[2] * fc.viewProj[2][2] + fc.viewProj[3][2];
+					const float w = p[0] * fc.viewProj[0][3] + p[1] * fc.viewProj[1][3] + p[2] * fc.viewProj[2][3] + fc.viewProj[3][3];
+					return std::fabs(w) > 1e-6f ? z / w : 0.0f;
+				};
+				const bool matrixReversed = ndcZ(2.0f) > ndcZ(200.0f);
+				fc.axes[1] = (matrixReversed != reversed) ? 1.0f : 0.0f;
+				static int logged = -1;
+				if (logged != int(fc.axes[1])) {
+					logged = int(fc.axes[1]);
+					logger::info("world renderer: matrix depth {} ({:.4f} at 2 m, {:.4f} at 200 m), buffer {}; {}", matrixReversed ? "reversed" : "standard", ndcZ(2.0f),
+						ndcZ(200.0f), reversed ? "reversed" : "standard", fc.axes[1] > 0.5f ? "flipping ours to match" : "matching");
+				}
+				if (SUCCEEDED(a_context->Map(frameCb, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped))) {
+					std::memcpy(mapped.pData, &fc, sizeof(fc));
+					a_context->Unmap(frameCb, 0);
+				}
+			}
 
 			// Entities, cracks and the outline around an integer origin near the camera.
 			const auto camMc = MadMax::ToMc(camPos);
