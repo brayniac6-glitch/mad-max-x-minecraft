@@ -87,6 +87,9 @@ namespace madcraft
 			std::size_t    which;
 		};
 		std::vector<ObjectHit> FindObjectsByVtable(const std::vector<std::uintptr_t>& a_vtables, std::size_t a_maxHits);
+		// Address of the player character's world matrix ([Hooks] PlayerMatrix); the character is
+		// 0x1D8 before it.
+		bool PlayerMatrixAddress(std::uintptr_t& a_out);
 		// MadMax.exe's base address (for "MadMax.exe+..." values).
 		std::uintptr_t ModuleBase();
 

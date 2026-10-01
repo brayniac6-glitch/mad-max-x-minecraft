@@ -1,5 +1,7 @@
 #include "Combat.h"
 
+#include "PlayerHurt.h"
+
 namespace madcraft::Combat
 {
 	namespace
@@ -281,6 +283,11 @@ namespace madcraft::Combat
 		}
 	}
 
+	std::uint32_t ActorId(std::uintptr_t a_object)
+	{
+		return IdOf(a_object);
+	}
+
 	void Update(const Vec3& a_playerFeet)
 	{
 		auto& link = Link::Get();
@@ -292,6 +299,8 @@ namespace madcraft::Combat
 		while (link.PopEvent(ev)) {
 			if (ev.type == proto::kEvHitActor) {
 				Hit(ev);
+			} else if (ev.type == proto::kEvPlayerDied) {
+				PlayerHurt::KillMax();
 			}
 		}
 		if (NowMs() - lastPublishMs >= 50) {

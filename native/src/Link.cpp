@@ -138,6 +138,9 @@ namespace madcraft
 		if (!base_) {
 			return;
 		}
+		// Several producers (the input poll, damage from the game's job threads): one at a time.
+		static std::mutex producers;
+		std::lock_guard   g{ producers };
 		auto* ring = base_ + proto::kOffInputRing;
 		auto& headRef = *reinterpret_cast<std::uint64_t*>(ring + proto::kInputRingHeadOff);
 		auto& tailRef = *reinterpret_cast<std::uint64_t*>(ring + proto::kInputRingTailOff);

@@ -10,4 +10,6 @@ namespace madcraft::Combat
 {
 	void Init();
 	void Update(const Vec3& a_playerFeet);
+	// The id a character's Minecraft stand-in has (ActorRecord::formId).
+	std::uint32_t ActorId(std::uintptr_t a_object);
 }

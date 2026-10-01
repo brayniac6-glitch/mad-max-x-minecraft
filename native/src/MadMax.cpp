@@ -406,6 +406,11 @@ namespace madcraft
 			logger::info("world: {} units/block, flipX {}, flipZ {}, yaw offset {}", scale, signX < 0, signZ < 0, yawOffsetDeg);
 		}
 
+		bool PlayerMatrixAddress(std::uintptr_t& a_out)
+		{
+			return Resolve(playerMatrix, a_out);
+		}
+
 		bool PlayerAvailable()
 		{
 			float          m[16];
