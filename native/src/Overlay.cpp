@@ -194,6 +194,8 @@ float4 PSMain(VSOut i) : SV_Target {
 			}
 			texW = a_w;
 			texH = a_h;
+			State().overlayW = static_cast<int>(a_w);
+			State().overlayH = static_cast<int>(a_h);
 			logger::info("overlay texture {}x{}", a_w, a_h);
 			return true;
 		}
@@ -371,8 +373,45 @@ float4 PSMain(VSOut i) : SV_Target {
 			SafeRelease(rtv);
 		}
 
+		// Mad Max's frame rate cap ([Render] iMaxFps, 0 = off). Both games share one GPU: Mad Max
+		// drawing 170 fps starves Minecraft, whose hand, HUD and Steve then update at 10-40 fps. A cap
+		// gives Minecraft room. Paced with a high-resolution waitable timer, the last bit spun.
+		void CapFrameRate()
+		{
+			static const int maxFps = static_cast<int>(IniDouble("Render", "iMaxFps", 90.0));
+			if (maxFps <= 0) {
+				return;
+			}
+			static const std::int64_t freq = [] { LARGE_INTEGER f; ::QueryPerformanceFrequency(&f); return f.QuadPart; }();
+			static const std::int64_t interval = freq / maxFps;
+			static HANDLE             timer = ::CreateWaitableTimerExW(nullptr, nullptr, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, TIMER_ALL_ACCESS);
+			static std::int64_t       next = 0;
+			LARGE_INTEGER             now;
+			::QueryPerformanceCounter(&now);
+			if (next == 0 || now.QuadPart - next > interval * 4) {
+				next = now.QuadPart;  // first frame, or far behind (a load): don't try to catch up
+			}
+			const std::int64_t wait = next - now.QuadPart;
+			if (wait > 0) {
+				const std::int64_t sleep100ns = wait * 10'000'000 / freq - 10'000;  // leave ~1 ms to spin
+				if (timer && sleep100ns > 0) {
+					LARGE_INTEGER due;
+					due.QuadPart = -sleep100ns;
+					if (::SetWaitableTimer(timer, &due, 0, nullptr, nullptr, FALSE)) {
+						::WaitForSingleObject(timer, INFINITE);
+					}
+				}
+				do {
+					_mm_pause();
+					::QueryPerformanceCounter(&now);
+				} while (now.QuadPart < next);
+			}
+			next += interval;
+		}
+
 		HRESULT WINAPI PresentHook(IDXGISwapChain* a_swapChain, UINT a_sync, UINT a_flags)
 		{
+			CapFrameRate();
 			// Present runs even while the game is paused (menus, loading), so this is also where Mad
 			// Max tells Minecraft it is still alive, and (until the game's update loop is hooked, see
 			// sheet/hooks.tsv) where the per-frame puppet update runs.

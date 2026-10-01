@@ -478,9 +478,14 @@ public final class MadClient {
 		MadCraft.LOG.info("MadCraft: game window hidden (run with -Dmadcraft.showWindow=true to keep it)");
 	}
 
+	// Minecraft draws its hand, HUD and screens at this fraction of Mad Max's resolution and Mad Max
+	// scales them up with crisp pixels: at 0.5 Minecraft picks half the GUI scale, so its pixel art
+	// lands at exactly the same size, for a quarter of the rendering and copying (smoother frames).
+	private static final double OVERLAY_SCALE = Math.clamp(Double.parseDouble(System.getProperty("madcraft.overlayScale", "0.5")), 0.25, 1.0);
+
 	private static void applyViewportSize(Minecraft minecraft) {
-		int w = Math.min(sky.viewportW, Proto.MAX_OVERLAY_W);
-		int h = Math.min(sky.viewportH, Proto.MAX_OVERLAY_H);
+		int w = Math.min((int) Math.round(sky.viewportW * OVERLAY_SCALE), Proto.MAX_OVERLAY_W);
+		int h = Math.min((int) Math.round(sky.viewportH * OVERLAY_SCALE), Proto.MAX_OVERLAY_H);
 		if (w <= 0 || h <= 0 || (w == appliedViewportW && h == appliedViewportH)) {
 			return;
 		}

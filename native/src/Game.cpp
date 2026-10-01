@@ -356,8 +356,8 @@ namespace madcraft
 			st.mcInWorld = haveMc && (mc.flags & proto::kMcInWorld);
 			const bool screenOpen = haveMc && (mc.flags & proto::kMcScreenOpen);
 			if (screenOpen && !st.mcScreenOpen) {
-				st.cursorX = st.viewportW / 2;
-				st.cursorY = st.viewportH / 2;
+				st.cursorX = (st.overlayW > 0 ? st.overlayW.load() : st.viewportW.load()) / 2;
+				st.cursorY = (st.overlayH > 0 ? st.overlayH.load() : st.viewportH.load()) / 2;
 			}
 			st.mcScreenOpen = screenOpen;
 			if (haveMc && mc.sensitivity > 0.0f) {

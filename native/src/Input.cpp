@@ -158,8 +158,20 @@ namespace madcraft
 			}
 			if (st.mcScreenOpen) {
 				if (a_dx || a_dy) {
-					const int x = std::clamp(st.cursorX.load() + int(a_dx), 0, st.viewportW.load() - 1);
-					const int y = std::clamp(st.cursorY.load() + int(a_dy), 0, st.viewportH.load() - 1);
+					// The cursor is in Minecraft's overlay pixels (it may render at a fraction of Mad
+					// Max's resolution): mouse movement is scaled to match, keeping the fractions.
+					const int   ow = st.overlayW > 0 ? st.overlayW.load() : st.viewportW.load();
+					const int   oh = st.overlayH > 0 ? st.overlayH.load() : st.viewportH.load();
+					const float kx = float(ow) / float(std::max(st.viewportW.load(), 1));
+					const float ky = float(oh) / float(std::max(st.viewportH.load(), 1));
+					static float fx = 0.0f, fy = 0.0f;
+					fx += float(a_dx) * kx;
+					fy += float(a_dy) * ky;
+					const int mx = int(fx), my = int(fy);
+					fx -= float(mx);
+					fy -= float(my);
+					const int x = std::clamp(st.cursorX.load() + mx, 0, ow - 1);
+					const int y = std::clamp(st.cursorY.load() + my, 0, oh - 1);
 					st.cursorX = x;
 					st.cursorY = y;
 					link.PushInput(proto::kInCursor, 0, x, y);

@@ -33,6 +33,9 @@ namespace madcraft
 		std::atomic<int> cursorY{ 0 };
 		std::atomic<int> viewportW{ 1920 };
 		std::atomic<int> viewportH{ 1080 };
+		// Minecraft's overlay size (it may render below Mad Max's resolution); the cursor lives in these.
+		std::atomic<int> overlayW{ 0 };
+		std::atomic<int> overlayH{ 0 };
 
 		// Where Steve's body is drawn (Minecraft coords): Max's feet this frame. Render thread.
 		double bodyX{ 0.0 }, bodyY{ 0.0 }, bodyZ{ 0.0 };
