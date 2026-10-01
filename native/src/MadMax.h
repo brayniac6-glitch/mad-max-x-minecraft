@@ -44,6 +44,8 @@ namespace madcraft
 		// The same camera's world -> clip matrix (row vectors: clip = p * M), for drawing into Mad
 		// Max's frame. It sits 0x180 after the world matrix ([141715F90]+0x5E0 +0x1D4).
 		bool GetCameraViewProj(float (&a_m)[16]);
+		// Mad Max's clock in hours ([Hooks] TimeOfDay: what its GetTimeOfDay script function returns).
+		bool GetTimeOfDay(float& a_hours);
 		// The render camera object itself (for the camera driver), 0 if not resolvable.
 		std::uintptr_t RenderCameraObject();
 

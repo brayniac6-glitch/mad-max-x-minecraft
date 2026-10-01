@@ -63,6 +63,7 @@ namespace madcraft
 		Chain vehicleFlag;        // -> non-zero byte while Max is in a vehicle
 		Chain setTransformIface;  // -> the object whose vtable holds SetTransform(this, const float m[16])
 		Chain cameraMatrix;       // -> the render camera's 4x4 world matrix
+		Chain timeOfDay;          // -> float: Mad Max's clock
 		Chain physicsSystem;      // -> pointer to the CPhysicsSystem (dereferenced once)
 		Chain raycastFn;          // function address (no dereference)
 		Chain staticFilterCtor;   // function address: CStaticOnlyRaycastFilter(this, mode, 0, 0, 0)
@@ -287,6 +288,7 @@ namespace madcraft
 			ParseChain(vehicleFlag, "InVehicle");
 			ParseChain(setTransformIface, "PlayerSetTransform");
 			ParseChain(cameraMatrix, "CameraMatrix");
+			ParseChain(timeOfDay, "TimeOfDay");
 			ParseChain(physicsSystem, "PhysicsSystem");
 			ParseChain(raycastFn, "RaycastFunction");
 			ParseChain(staticFilterCtor, "RaycastStaticFilter");
@@ -393,6 +395,22 @@ namespace madcraft
 				}
 			}
 			return a_m[15] != 0.0f || a_m[11] != 0.0f;  // a projection has w from z
+		}
+
+		bool GetTimeOfDay(float& a_hours)
+		{
+			std::uintptr_t addr = 0;
+			float          t = 0.0f;
+			if (!Resolve(timeOfDay, addr) || !SafeRead(addr, &t, sizeof(t)) || !std::isfinite(t)) {
+				return false;
+			}
+			// Hours 0..24 expected; a 0..1 day fraction is scaled up (logged once to confirm which).
+			static bool logged = false;
+			if (!std::exchange(logged, true)) {
+				logger::info("time of day reads {:.3f}", t);
+			}
+			a_hours = t <= 1.0001f ? t * 24.0f : std::fmod(t, 24.0f);
+			return true;
 		}
 
 		std::uintptr_t RenderCameraObject()

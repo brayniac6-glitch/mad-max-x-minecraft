@@ -41,17 +41,21 @@ namespace madcraft
 cbuffer Frame : register(b0)
 {
 	row_major float4x4 viewProj;  // camera-relative Mad Max world (metres, Y up) -> clip, row vectors
-	float4 light;                 // x: daylight (0..1), y: minimum brightness, z: face shading on, w: scene lighting on
+	float4 light;                 // x: exposure, y: minimum brightness, z: lighting model on, w: scene tint on
 	float4 axes;                  // x, z: +1/-1 Minecraft -> Mad Max axis signs
-	float4 scene;                 // x: 1/width, y: 1/height, z: local mip, w: gain
+	float4 sunDir;                // towards the sun (or moon), Mad Max axes; w: night (0..1)
+	float4 sunColor;              // rgb
+	float4 ambient;               // rgb (the sky's fill light)
+	float4 fog;                   // x: start (m), y: end (m), z: max amount, w: on
 };
-Texture2D sceneColor : register(t1);  // Mad Max's frame before our blocks, mipmapped (blurred)
 cbuffer Object : register(b1)
 {
 	float4 offset;                // camera-relative Mad Max position of the mesh's Minecraft origin
 };
 Texture2D atlas : register(t0);
+Texture2D sceneColor : register(t1);  // Mad Max's frame (mipmapped): its average tints our light and haze
 SamplerState atlasSampler : register(s0);
+SamplerState smoothSampler : register(s1);
 
 struct VSIn
 {
@@ -86,8 +90,23 @@ VSOut VSMain(VSIn i)
 
 float Curve(float l) { return l / (4.0 - 3.0 * l); }  // Minecraft's light-level falloff
 
-// Minecraft's fixed face shading by Direction ordinal + 1: down, up, north, south, west, east.
-static const float kShade[8] = { 1.0, 0.5, 1.0, 0.8, 0.8, 0.6, 0.6, 1.0 };
+// Face normals by Minecraft Direction ordinal + 1 (down, up, north, south, west, east), Minecraft axes.
+static const float3 kNormals[8] = {
+	float3(0, 0, 0), float3(0, -1, 0), float3(0, 1, 0), float3(0, 0, -1),
+	float3(0, 0, 1), float3(-1, 0, 0), float3(1, 0, 0), float3(0, 0, 0) };
+
+// SkyCraft's lighting (MIT, chasmlol), with Mad Max's sun: the sky's fill light (darkened where
+// Minecraft's sky light says a face is roofed over), plus the sun on faces turned towards it, through
+// a soft exposure curve into the game's range; Minecraft's block light (torches) still glows.
+float3 Lighting(float2 l, float3 n, bool hasNormal, float3 tint)
+{
+	float sky = Curve(l.y);
+	float sun = hasNormal ? saturate(dot(n, sunDir.xyz)) : 0.35 + 0.4 * saturate(sunDir.y);
+	float3 lit = ambient.rgb * tint * lerp(0.3, 1.0, sky) + sunColor.rgb * tint * (sun * sky * sky);
+	lit = 1.0 - exp(-max(lit, 0.0) * light.x);
+	float block = Curve(l.x);
+	return max(max(lit, light.y), block * float3(1.0, 0.85, 0.65));
+}
 
 float4 PSMain(VSOut i) : SV_Target
 {
@@ -98,40 +117,70 @@ float4 PSMain(VSOut i) : SV_Target
 	if (!(i.flags & 2) && t.a < 0.5) {
 		discard;
 	}
-	uint  ni = (i.flags >> 4) & 7;
-	float shade = light.z > 0.5 ? kShade[ni] : 1.0;
+	uint   ni = (i.flags >> 4) & 7;
+	float3 n = kNormals[ni];
+	n = float3(n.x * axes.x, n.y, n.z * axes.z);
 	if (ni == 7) {
-		// Lit by the triangle's own normal (entity models): Minecraft's up/side/down shading.
-		float3 n = normalize(cross(ddy(i.rel), ddx(i.rel)));
+		n = normalize(cross(ddy(i.rel), ddx(i.rel)));  // entity models: the triangle's own normal
 		n = dot(n, i.rel) > 0 ? -n : n;
-		shade = n.y > 0.5 ? 1.0 : n.y < -0.5 ? 0.5 : 0.7 + 0.1 * abs(n.x);
 	}
-	float  sky = Curve(i.light.y) * light.x;
-	float  block = Curve(i.light.x);
-	float3 lit = max(sky, light.y);
-	if (light.w > 0.5) {
-		// Lit like what's around it in Mad Max's own picture: the blurred frame near this pixel
-		// (shade, dusk, haze, colour grading) mixed with the whole frame's average, so blocks sit
-		// in the scene's light instead of Minecraft's noon.
-		float2 suv = i.pos.xy * scene.xy;
-		float3 local = sceneColor.SampleLevel(atlasSampler, suv, scene.z).rgb;
-		float3 global = sceneColor.SampleLevel(atlasSampler, float2(0.5, 0.5), 12.0).rgb;
-		float3 env = lerp(global, local, 0.65) * scene.w;
-		lit = env * lerp(0.35, 1.0, Curve(i.light.y));  // Minecraft's sky light still darkens roofed-over faces
+	// The scene's overall colour (one smooth average of Mad Max's frame), so the blocks pick up its
+	// grading and the time of day's tone without looking like a pasted-on noon.
+	float3 avg = light.w > 0.5 ? sceneColor.SampleLevel(smoothSampler, float2(0.5, 0.5), 14.0).rgb : 0.5;
+	float  avgL = max(dot(avg, float3(0.2126, 0.7152, 0.0722)), 0.02);
+	float3 tint = light.w > 0.5 ? lerp(1.0, avg / avgL, 0.35) : 1.0;
+	float3 lit = light.z > 0.5 ? Lighting(i.light, n, ni != 0, tint) : max(Curve(i.light.y), light.y);
+	float3 c = t.rgb * i.color.rgb * lit;
+	if (fog.w > 0.5) {
+		// Mad Max's dusty haze: towards the scene's own average colour with distance.
+		float f = saturate((length(i.rel) - fog.x) / max(fog.y - fog.x, 1.0)) * fog.z;
+		c = lerp(c, avg, f);
 	}
-	lit = max(lit, block * float3(1.0, 0.85, 0.65));    // torches, glowstone, lava still glow
-	float3 c = t.rgb * i.color.rgb * lit * shade;
 	return float4(saturate(c), (i.flags & 2) ? t.a * i.color.a : 1.0);
-}
-)";
+})";
 
 		struct alignas(16) FrameConstants
 		{
 			float viewProj[4][4];
 			float light[4];
 			float axes[4];
-			float scene[4];
+			float sunDir[4];
+			float sunColor[4];
+			float ambient[4];
+			float fog[4];
 		};
+
+		ID3D11SamplerState* smoothSampler = nullptr;
+
+		// Sun, sky and haze for the hour (Mad Max's clock, sheet/hooks.tsv H08). The sun rises in the
+		// east, peaks at noon and sets in the west; [Render] fSunAzimuthDeg turns that path to match
+		// Mad Max's shadows. Colours follow the desert day: warm white, orange near the horizon, a dim
+		// blue moon at night. Like SkyCraft's GatherLighting, from Skyrim's sky and weather.
+		void SetDaylight(FrameConstants& a_fc, float a_hour)
+		{
+			const float azimuth = static_cast<float>(IniDouble("Render", "fSunAzimuthDeg", 0.0)) * kPi / 180.0f;
+			const float dayAngle = (a_hour - 6.0f) / 12.0f * kPi;  // 0 at 6:00 (east), pi at 18:00 (west)
+			float       elev = std::sin(dayAngle);
+			const bool  night = elev < 0.0f;
+			const float across = std::cos(dayAngle);
+			// The moon takes the sun's place, opposite it, at night.
+			const float dx = (night ? -across : across), dy = std::fabs(elev);
+			float       d[3] = { dx * std::cos(azimuth), std::max(dy, 0.08f), dx * std::sin(azimuth) + 0.25f };
+			const float len = std::sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
+			const float nightAmount = std::clamp(-elev * 4.0f, 0.0f, 1.0f);
+			const float horizon = std::clamp(1.0f - dy * 2.5f, 0.0f, 1.0f);  // low sun: orange
+			for (int k = 0; k < 3; ++k) {
+				a_fc.sunDir[k] = d[k] / len;
+			}
+			a_fc.sunDir[3] = nightAmount;
+			const float day[3] = { 1.15f, 1.02f, 0.86f }, dusk[3] = { 1.2f, 0.62f, 0.32f }, moon[3] = { 0.16f, 0.2f, 0.32f };
+			const float ambDay[3] = { 0.55f, 0.58f, 0.62f }, ambNight[3] = { 0.07f, 0.09f, 0.15f };
+			for (int k = 0; k < 3; ++k) {
+				const float sun = day[k] + (dusk[k] - day[k]) * horizon;
+				a_fc.sunColor[k] = sun + (moon[k] - sun) * nightAmount;
+				a_fc.ambient[k] = ambDay[k] + (ambNight[k] - ambDay[k]) * nightAmount;
+			}
+		}
 
 		// A mipmapped copy of Mad Max's frame (before our blocks): the scene's light for the blocks.
 		ID3D11Texture2D*          sceneTex = nullptr;
@@ -340,6 +389,8 @@ float4 PSMain(VSOut i) : SV_Target
 			sd.AddressU = sd.AddressV = sd.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
 			sd.MaxLOD = D3D11_FLOAT32_MAX;
 			a_device->CreateSamplerState(&sd, &atlasSampler);
+			sd.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;  // the scene average: smooth, never blocky
+			a_device->CreateSamplerState(&sd, &smoothSampler);
 
 			D3D11_RASTERIZER_DESC rd{};
 			rd.FillMode = D3D11_FILL_SOLID;
@@ -817,9 +868,14 @@ float4 PSMain(VSOut i) : SV_Target
 		// ---- drawing -----------------------------------------------------------------------------
 		Vec3 camPos{};  // this frame's camera, Mad Max world
 
-		// [Render] bSceneLighting / fSceneGain: blocks lit by Mad Max's own picture around them.
-		const bool  sceneLighting = IniBool("Render", "bSceneLighting", true);
-		const float sceneGain = static_cast<float>(IniDouble("Render", "fSceneGain", 1.8));
+		// [Render]: SkyCraft-style lighting with Mad Max's sun (bLighting, fExposure), tinted by the
+		// scene's overall colour (bSceneTint), and Mad Max's haze (fFogStart/End/Max; 0 = off).
+		const bool  lightingModel = IniBool("Render", "bLighting", true);
+		const bool  sceneLighting = IniBool("Render", "bSceneTint", true);
+		const float exposure = static_cast<float>(IniDouble("Render", "fExposure", 1.6));
+		const float fogStart = static_cast<float>(IniDouble("Render", "fFogStart", 60.0));
+		const float fogEnd = static_cast<float>(IniDouble("Render", "fFogEnd", 600.0));
+		const float fogMax = static_cast<float>(IniDouble("Render", "fFogMax", 0.6));
 
 		// A Minecraft point (blocks) -> camera-relative Mad Max position, in double precision.
 		void SetObjectOffset(ID3D11DeviceContext* a_context, const double a_mc[3])
@@ -919,7 +975,7 @@ float4 PSMain(VSOut i) : SV_Target
 			ID3D11Buffer*             vsCb[2]{};
 			ID3D11Buffer*             psCb[2]{};
 			ID3D11ShaderResourceView* srv[2]{};
-			ID3D11SamplerState*       samplers[1]{};
+			ID3D11SamplerState*       samplers[2]{};
 
 			void Save(ID3D11DeviceContext* a_c)
 			{
@@ -936,7 +992,7 @@ float4 PSMain(VSOut i) : SV_Target
 				a_c->VSGetConstantBuffers(0, 2, vsCb);
 				a_c->PSGetConstantBuffers(0, 2, psCb);
 				a_c->PSGetShaderResources(0, 2, srv);
-				a_c->PSGetSamplers(0, 1, samplers);
+				a_c->PSGetSamplers(0, 2, samplers);
 			}
 
 			void Restore(ID3D11DeviceContext* a_c)
@@ -954,7 +1010,7 @@ float4 PSMain(VSOut i) : SV_Target
 				a_c->VSSetConstantBuffers(0, 2, vsCb);
 				a_c->PSSetConstantBuffers(0, 2, psCb);
 				a_c->PSSetShaderResources(0, 2, srv);
-				a_c->PSSetSamplers(0, 1, samplers);
+				a_c->PSSetSamplers(0, 2, samplers);
 				for (auto*& r : rtv) {
 					Release(r);
 				}
@@ -975,6 +1031,7 @@ float4 PSMain(VSOut i) : SV_Target
 				Release(srv[0]);
 				Release(srv[1]);
 				Release(samplers[0]);
+				Release(samplers[1]);
 			}
 		};
 
@@ -997,9 +1054,16 @@ float4 PSMain(VSOut i) : SV_Target
 			for (int c = 0; c < 4; ++c) {
 				fc.viewProj[3][c] = float(double(vp[12 + c]) + double(camPos.x) * vp[c] + double(camPos.y) * vp[4 + c] + double(camPos.z) * vp[8 + c]);
 			}
-			fc.light[0] = 1.0f;   // daylight (TODO hooks.tsv H08: Mad Max's time of day)
-			fc.light[1] = 0.25f;  // never pitch black
-			fc.light[2] = 1.0f;
+			fc.light[0] = exposure;  // SkyCraft's soft exposure curve
+			fc.light[1] = 0.04f;     // never fully black
+			fc.light[2] = lightingModel ? 1.0f : 0.0f;
+			float hour = 12.0f;
+			MadMax::GetTimeOfDay(hour);
+			SetDaylight(fc, hour);
+			fc.fog[0] = fogStart;
+			fc.fog[1] = fogEnd;
+			fc.fog[2] = fogMax;
+			fc.fog[3] = fogMax > 0.0f ? 1.0f : 0.0f;
 			const Vec3 one = MadMax::FromMc(1.0, 0.0, 1.0);
 			fc.axes[0] = one.x < 0.0f ? -1.0f : 1.0f;
 			fc.axes[2] = one.z < 0.0f ? -1.0f : 1.0f;
@@ -1025,10 +1089,6 @@ float4 PSMain(VSOut i) : SV_Target
 			}
 			if (haveScene) {
 				fc.light[3] = 1.0f;
-				fc.scene[0] = 1.0f / float(bbDesc.Width);
-				fc.scene[1] = 1.0f / float(bbDesc.Height);
-				fc.scene[2] = 5.0f;  // 1/32 resolution: a block's surroundings
-				fc.scene[3] = sceneGain;
 				if (SUCCEEDED(a_context->Map(frameCb, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped))) {
 					std::memcpy(mapped.pData, &fc, sizeof(fc));
 					a_context->Unmap(frameCb, 0);
@@ -1081,7 +1141,8 @@ float4 PSMain(VSOut i) : SV_Target
 			ID3D11Buffer* cbs[2] = { frameCb, objectCb };
 			a_context->VSSetConstantBuffers(0, 2, cbs);
 			a_context->PSSetConstantBuffers(0, 2, cbs);
-			a_context->PSSetSamplers(0, 1, &atlasSampler);
+			ID3D11SamplerState* samplerPair[2] = { atlasSampler, smoothSampler };
+			a_context->PSSetSamplers(0, 2, samplerPair);
 			a_context->IASetInputLayout(layout);
 			a_context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 			a_context->VSSetShader(vs, nullptr, 0);
