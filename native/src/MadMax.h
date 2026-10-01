@@ -90,6 +90,14 @@ namespace madcraft
 		// Address of the player character's world matrix ([Hooks] PlayerMatrix); the character is
 		// 0x1D8 before it.
 		bool PlayerMatrixAddress(std::uintptr_t& a_out);
+		// Mad Max is paused (pause menu and its screens): what its IsGamePaused script function returns,
+		// the byte at [Hooks] GamePaused (H07).
+		bool IsGamePaused();
+		// Max is in a cutscene / scripted sequence: the "in sequence" bit the game's CInSequence
+		// condition reads ([Hooks] iInSequenceOffset / iInSequenceBit on the character, H15).
+		bool PlayerInCutscene();
+		// The player's CCharacter (0 when no game is loaded).
+		std::uintptr_t PlayerCharacter();
 		// MadMax.exe's base address (for "MadMax.exe+..." values).
 		std::uintptr_t ModuleBase();
 

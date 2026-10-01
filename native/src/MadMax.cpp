@@ -83,6 +83,9 @@ namespace madcraft
 		Chain setTransformIface;  // -> the object whose vtable holds SetTransform(this, const float m[16])
 		Chain cameraMatrix;       // -> the render camera's 4x4 world matrix
 		Chain timeOfDay;          // -> float: Mad Max's clock
+		Chain gamePaused;         // -> byte: non-zero while Mad Max is paused
+		std::uintptr_t inSequenceOffset = 0x432;
+		int            inSequenceBit = 1;
 		Chain physicsSystem;      // -> pointer to the CPhysicsSystem (dereferenced once)
 		Chain raycastFn;          // function address (no dereference)
 		Chain staticFilterCtor;   // function address: CStaticOnlyRaycastFilter(this, mode, 0, 0, 0)
@@ -369,6 +372,9 @@ namespace madcraft
 			ParseChain(setTransformIface, "PlayerSetTransform");
 			ParseChain(cameraMatrix, "CameraMatrix");
 			ParseChain(timeOfDay, "TimeOfDay");
+			ParseChain(gamePaused, "GamePaused");
+			inSequenceOffset = static_cast<std::uintptr_t>(IniDouble("Hooks", "iInSequenceOffset", 0x432));
+			inSequenceBit = static_cast<int>(IniDouble("Hooks", "iInSequenceBit", 1));
 			ParseChain(physicsSystem, "PhysicsSystem");
 			ParseChain(raycastFn, "RaycastFunction");
 			ParseChain(staticFilterCtor, "RaycastStaticFilter");
@@ -409,6 +415,26 @@ namespace madcraft
 		bool PlayerMatrixAddress(std::uintptr_t& a_out)
 		{
 			return Resolve(playerMatrix, a_out);
+		}
+
+		std::uintptr_t PlayerCharacter()
+		{
+			std::uintptr_t matrix = 0;
+			return PlayerMatrixAddress(matrix) && matrix > 0x1D8 ? matrix - 0x1D8 : 0;
+		}
+
+		bool IsGamePaused()
+		{
+			std::uintptr_t addr = 0;
+			std::uint8_t   v = 0;
+			return Resolve(gamePaused, addr) && SafeRead(addr, &v, 1) && v != 0;
+		}
+
+		bool PlayerInCutscene()
+		{
+			const auto   me = PlayerCharacter();
+			std::uint8_t v = 0;
+			return me && inSequenceOffset && SafeRead(me + inSequenceOffset, &v, 1) && ((v >> inSequenceBit) & 1) != 0;
 		}
 
 		bool PlayerAvailable()
@@ -511,9 +537,10 @@ namespace madcraft
 			if (!Resolve(timeOfDay, addr) || !SafeRead(addr, &t, sizeof(t)) || !std::isfinite(t)) {
 				return false;
 			}
-			// Hours 0..24 expected; a 0..1 day fraction is scaled up (logged once to confirm which).
-			static bool logged = false;
-			if (!std::exchange(logged, true)) {
+			// Hours 0..24 expected; a 0..1 day fraction is scaled up. Logged once a minute (is it moving?).
+			static std::uint64_t lastLog = 0;
+			if (::GetTickCount64() - lastLog > 60000) {
+				lastLog = ::GetTickCount64();
 				logger::info("time of day reads {:.3f}", t);
 			}
 			a_hours = t <= 1.0001f ? t * 24.0f : std::fmod(t, 24.0f);

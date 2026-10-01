@@ -162,6 +162,13 @@ namespace madcraft
 		const bool hideMaxModel = IniBool("Camera", "bHideMax", true);
 		// Steve in a car's seat: how far above Max's (seated) position his feet go, in blocks.
 		const float seatOffset = static_cast<float>(IniDouble("Vehicle", "fSeatOffsetY", 0.0));
+		// [Survival]: one life for both games, Mad Max's clock for Minecraft's, its food for Minecraft's
+		// hunger, and Mad Max controls during its pauses and cutscenes.
+		const bool  autoControlsOn = IniBool("Survival", "bAutoControls", true);
+		const bool  keepInventory = IniBool("Survival", "bKeepInventory", true);
+		const bool  syncTime = IniBool("Survival", "bSyncTimeOfDay", true);
+		const bool  feedOn = IniBool("Survival", "bFoodFromMadMax", true);
+		const float foodScale = static_cast<float>(IniDouble("Survival", "fFoodScale", 1.0));
 		// First person in a car: looking this many degrees down at the road to start with.
 		const float carBasePitch = static_cast<float>(IniDouble("Vehicle", "fFirstPersonPitch", 6.0));
 		float       carLookYaw = 0.0f, carLookPitch = 0.0f;  // the mouse in the cab, relative to the car
@@ -396,6 +403,79 @@ namespace madcraft
 					st.pitch = 0.0f;
 				}
 			}
+			// Mad Max's pauses (pause menu and its screens) and cutscenes take the controls; Minecraft mode
+			// comes back once they're over (if it was on before).
+			const auto nowMs = ::GetTickCount64();
+			const bool paused = MadMax::IsGamePaused();
+			const bool cutscene = inGame && MadMax::PlayerInCutscene();
+			st.gameMenuOpen = paused;
+			static bool wasPaused = false, wasCutscene = false;
+			if (paused != wasPaused || cutscene != wasCutscene) {
+				logger::info("game: {}{}", paused ? "paused" : "running", cutscene ? ", cutscene" : "");
+				wasPaused = paused;
+				wasCutscene = cutscene;
+			}
+			static std::uint64_t calmSinceMs = 0;
+			if (autoControlsOn) {
+				if ((paused || cutscene) && !st.madMaxControls && st.mcInWorld && st.carHandoffUntilMs == 0) {
+					st.madMaxControls = true;
+					st.autoControls = true;
+					Input::ReleaseAll();
+					logger::info("controls: Mad Max ({}); back to Minecraft when it's over", paused ? "paused" : "cutscene");
+				}
+				if (paused) {
+					st.escAtMs = 0;  // Esc's menu opened
+				}
+				if (st.autoControls && st.madMaxControls) {
+					const auto esc = st.escAtMs.load();
+					if (esc && nowMs - esc > 2500) {
+						// Esc opened something that doesn't pause: Mad Max keeps the controls (F8 hands back).
+						st.escAtMs = 0;
+						st.autoControls = false;
+						logger::info("controls: Mad Max (Esc menu); F8 hands the player to Minecraft");
+					} else if (paused || cutscene || !inGame || esc) {
+						calmSinceMs = nowMs;
+					} else if (nowMs - calmSinceMs > 700) {
+						st.madMaxControls = false;
+						st.autoControls = false;
+						Input::ReleaseAll();
+						logger::info("controls: Minecraft (pause/cutscene/load over)");
+					}
+				}
+			}
+
+			// One life: Max's death, for Minecraft (which kills its player once per death).
+			float maxHealth = 0.0f, maxHealthMax = 0.0f;
+			std::uint8_t deadByte = 0;
+			const auto   me = MadMax::PlayerCharacter();
+			const bool   haveHealth = me && MadMax::ReadHealth(me, maxHealth, maxHealthMax);
+			const bool   maxDead = haveHealth && (maxHealth <= 0.0f || (SafeRead(me + 0xE8, &deadByte, 1) && deadByte != 0));
+			static bool          wasDead = false;
+			static std::uint64_t lastDeathMs = 0;
+			if (maxDead != wasDead) {
+				logger::info("player: Max {}", maxDead ? "died" : "is alive");
+				wasDead = maxDead;
+				if (maxDead) {
+					lastDeathMs = nowMs;
+				}
+			}
+			// Mad Max's food and water for Minecraft's hunger: Max healing (canteen, water, maggots, dog
+			// food) feeds Steve the same share. Not a respawn's or a load's full heal.
+			static float lastHealth = -1.0f;
+			static std::uint64_t lastJumpMs = 0;
+			if (haveHealth && !maxDead) {
+				const float gain = lastHealth >= 0.0f ? maxHealth - lastHealth : 0.0f;
+				if (feedOn && gain > 0.01f && maxHealthMax > 0.0f && gain < 0.8f * maxHealthMax && nowMs - lastDeathMs > 15000 && nowMs - lastJumpMs > 5000 &&
+					st.mcInWorld) {
+					const float food = gain / maxHealthMax * 20.0f * foodScale;
+					link.PushInput(proto::kInFeed, 0, static_cast<std::int32_t>(std::lround(food * 100.0f)), static_cast<std::int32_t>(std::lround(food * 60.0f)));
+					logger::info("player: Max healed {:.1f}/{:.0f} -> {:.1f} Minecraft food", gain, maxHealthMax, food);
+				}
+				lastHealth = maxHealth;
+			} else {
+				lastHealth = -1.0f;
+			}
+
 			// The car key's hand-off to Mad Max (it only lets Max into a car under its own control),
 			// invisible: Minecraft's view stays until he's in the car. Over once he's in, or as soon as
 			// it's clear nothing is happening (no car here: Max doesn't start walking to a door).
@@ -454,11 +534,14 @@ namespace madcraft
 					logger::info("Mad Max moved the player ({:.0f} blocks); resyncing Minecraft", gap);
 					teleportPending = true;
 					haveLastSet = false;
+					lastJumpMs = ::GetTickCount64();  // a load's full health isn't food
 					if (gap > kLoadThreshold && !st.madMaxControls) {
-						// A load or fast travel lands on a loading screen or cutscene: Mad Max's.
+						// A load or fast travel lands on a loading screen or cutscene: Mad Max's, until
+						// it's over.
 						st.madMaxControls = true;
+						st.autoControls = autoControlsOn;
 						Input::ReleaseAll();
-						logger::info("controls: Mad Max (load); F8 hands the player to Minecraft");
+						logger::info("controls: Mad Max (load){}", autoControlsOn ? "; Minecraft again once it's over" : "; F8 hands the player to Minecraft");
 					}
 				}
 			}
@@ -710,7 +793,8 @@ namespace madcraft
 			// Tell Minecraft where Max is and where they're looking.
 			proto::MadState out{};
 			out.flags = (inGame ? proto::kSkyInGame : 0u) | (st.gameMenuOpen ? proto::kSkyMenuOpen : 0u) | (inGame ? 0u : proto::kSkyLoading) |
-			            (driving ? proto::kSkyDriving : 0u);
+			            (driving ? proto::kSkyDriving : 0u) | (maxDead ? proto::kSkyPlayerDead : 0u) | (keepInventory ? proto::kSkyKeepInventory : 0u) |
+			            (cutscene ? proto::kSkyCutscene : 0u);
 			out.worldId = 1;  // one open world (Mad Max has no separate worldspaces/interiors)
 			out.collisionEpoch = Collision::Available() ? Collision::Epoch() : epoch;
 			out.posX = feetMc.x;
@@ -721,7 +805,11 @@ namespace madcraft
 			out.teleportSeq = teleportSeq;
 			out.viewportW = static_cast<std::uint32_t>(st.viewportW.load());
 			out.viewportH = static_cast<std::uint32_t>(st.viewportH.load());
-			out.gameHour = 12.0f;  // TODO(hooks.tsv: TimeOfDay) until Mad Max's clock is found
+			float hour = 12.0f;
+			if (syncTime) {
+				MadMax::GetTimeOfDay(hour);
+			}
+			out.gameHour = hour;
 			out.shade = st.shade;
 			link.WriteGameState(out);
 

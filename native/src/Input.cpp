@@ -160,6 +160,8 @@ namespace madcraft
 			if (a_dik == kDikF8) {
 				if (a_down && !f8Down) {
 					st.madMaxControls = !st.madMaxControls;
+					st.autoControls = false;  // a manual choice
+					st.escAtMs = 0;
 					Input::ReleaseAll();
 					logger::info("controls: {}", st.madMaxControls ? "Mad Max" : "Minecraft");
 				}
@@ -214,8 +216,10 @@ namespace madcraft
 			if (!st.mcScreenOpen) {
 				if (a_dik == 0x01 && a_down) {
 					// Esc opens Mad Max's pause menu, which needs the mouse: Mad Max takes the
-					// controls until F8 hands them back.
+					// controls, and Minecraft mode comes back when the game unpauses.
 					st.madMaxControls = true;
+					st.autoControls = true;
+					st.escAtMs = ::GetTickCount64();
 					Input::ReleaseAll();
 					logger::info("controls: Mad Max (Esc)");
 					return;

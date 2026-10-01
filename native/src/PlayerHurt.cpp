@@ -117,6 +117,10 @@ namespace madcraft::PlayerHurt
 			return;
 		}
 		if (const auto me = PlayerCharacter()) {
+			float hp = 0.0f, max = 0.0f;
+			if (!MadMax::ReadHealth(me, hp, max) || hp <= 0.0f) {
+				return;  // dead already (Minecraft's player died with him)
+			}
 			const bool ok = MadMax::SetHealth(me, 0.0f);
 			logger::info("player hurt: Minecraft's player died; Max too{}", ok ? "" : " (FAILED)");
 		}

@@ -63,6 +63,7 @@ public final class InputBridge {
 			}
 			case Proto.IN_RELEASE_ALL -> releaseAll();
 			case Proto.IN_HURT -> hurt(minecraft, code, a / 100.0F, b, c);
+			case Proto.IN_FEED -> feed(minecraft, a / 100.0F, b / 100.0F);
 			case Proto.IN_OPEN_MENU -> {
 				if (minecraft.gui.screen() == null && minecraft.player != null) {
 					releaseAll();
@@ -72,6 +73,21 @@ public final class InputBridge {
 			default -> {
 			}
 		}
+	}
+
+	/** Max drank or ate in Mad Max: fill Minecraft's hunger on the integrated server. */
+	private static void feed(Minecraft minecraft, float food, float saturation) {
+		var server = minecraft.getSingleplayerServer();
+		if (minecraft.player == null || server == null) {
+			return;
+		}
+		var uuid = minecraft.player.getUUID();
+		server.execute(() -> {
+			ServerPlayer player = server.getPlayerList().getPlayer(uuid);
+			if (player != null) {
+				dev.madcraft.MadSurvival.feed(player, food, saturation);
+			}
+		});
 	}
 
 	/** MadMax hit the player: apply it as Minecraft damage on the integrated server (or the host's). */

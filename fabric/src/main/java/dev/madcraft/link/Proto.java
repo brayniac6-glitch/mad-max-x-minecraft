@@ -40,6 +40,7 @@ public final class Proto {
 	// Input types added in v5
 	public static final int IN_HURT = 7;
 	public static final int IN_OPEN_MENU = 8;
+	public static final int IN_FEED = 9;
 	public static final int HURT_MELEE = 0;
 	public static final int HURT_PROJECTILE = 1;
 	public static final int HURT_MAGIC = 2;
@@ -150,6 +151,9 @@ public final class Proto {
 	public static final int SKY_MENU_OPEN = 1 << 1;
 	public static final int SKY_LOADING = 1 << 2;
 	public static final int SKY_DRIVING = 1 << 3;
+	public static final int SKY_PLAYER_DEAD = 1 << 4;
+	public static final int SKY_KEEP_INVENTORY = 1 << 5;
+	public static final int SKY_CUTSCENE = 1 << 6;
 
 	// McState (relative to OFF_MC_STATE)
 	public static final long MS_SEQ = 0x00;

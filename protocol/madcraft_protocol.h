@@ -61,6 +61,9 @@ namespace madcraft::proto
 		kSkyMenuOpen = 1u << 1,  // a MadMax menu owns input; MC should drop held keys
 		kSkyLoading = 1u << 2,   // loading screen / cell transition in progress
 		kSkyDriving = 1u << 3,   // the player is in a Mad Max car: Minecraft's player sits and follows it
+		kSkyPlayerDead = 1u << 4,      // Max is dead (Minecraft's player dies with him, once per death)
+		kSkyKeepInventory = 1u << 5,   // keep Minecraft's inventory on death ([Survival] bKeepInventory)
+		kSkyCutscene = 1u << 6,        // Max is in a cutscene (Mad Max has the controls)
 	};
 
 	// Mad Max's water (lakes, rivers, the sea) around the player, for Minecraft to treat as its own
@@ -192,6 +195,7 @@ namespace madcraft::proto
 		kInReleaseAll = 6,   // release every held key/button (input focus left MC)
 		kInHurt = 7,         // MadMax hit the player: code = HurtKind, a = MadMax damage * 100, b = attacker FormID, c = HurtFlags
 		kInOpenMenu = 8,     // open Minecraft's pause/options menu
+		kInFeed = 9,         // Max drank or ate in Mad Max: a = food points * 100, b = saturation * 100
 	};
 
 	enum HurtKind : std::uint16_t

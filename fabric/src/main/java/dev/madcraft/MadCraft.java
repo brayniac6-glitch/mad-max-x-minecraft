@@ -22,6 +22,7 @@ public final class MadCraft implements ModInitializer {
 	@Override
 	public void onInitialize() {
 		MadCombat.init();
+		MadSurvival.init();
 		dev.madcraft.net.MadNet.init();
 		ServerLifecycleEvents.SERVER_STARTED.register(MadCraft::configureServer);
 		ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {

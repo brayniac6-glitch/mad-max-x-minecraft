@@ -17,6 +17,11 @@ namespace madcraft
 		// Mad Max has the controls: every key goes to the game. Starts on (menus need the mouse) and
 		// comes back on Esc and after loads; F8 hands the player to Minecraft.
 		std::atomic<bool> madMaxControls{ true };
+		// Mad Max has the controls because of a pause, a cutscene, a load or Esc: Minecraft mode comes
+		// back on its own when that's over (F8 makes it a manual choice again). escAtMs: when Esc was
+		// pressed (its menu should pause the game shortly after).
+		std::atomic<bool>          autoControls{ false };
+		std::atomic<std::uint64_t> escAtMs{ 0 };
 		std::atomic<bool> mcScreenOpen{ false };
 		std::atomic<bool> gameMenuOpen{ false };
 		std::atomic<bool> mcInWorld{ false };
