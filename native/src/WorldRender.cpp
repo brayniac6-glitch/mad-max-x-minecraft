@@ -297,31 +297,68 @@ float4 PSMain(VSOut i) : SV_Target
 		{
 			ID3D11DepthStencilView* dsv{ nullptr };
 			float                   clear{ 1.0f };
+			int                     binds{ 0 };
 		};
-		std::vector<DepthCandidate> frameDepths;
+		std::vector<DepthCandidate> frameDepths;  // this frame's screen-sized depth buffers, by use
+		std::unordered_map<ID3D11DepthStencilView*, float> clearValues;  // last clear value per buffer
 		UINT                        screenW = 0, screenH = 0;
+
+		bool ScreenSized(ID3D11DepthStencilView* a_dsv)
+		{
+			if (!a_dsv || !screenW || a_dsv == ownDsv) {
+				return false;
+			}
+			ID3D11Resource* res = nullptr;
+			a_dsv->GetResource(&res);
+			ID3D11Texture2D* tex = nullptr;
+			bool             ok = false;
+			if (res && SUCCEEDED(res->QueryInterface(__uuidof(ID3D11Texture2D), reinterpret_cast<void**>(&tex)))) {
+				D3D11_TEXTURE2D_DESC td{};
+				tex->GetDesc(&td);
+				ok = td.Width == screenW && td.Height == screenH && td.SampleDesc.Count == 1;
+				tex->Release();
+			}
+			Release(res);
+			return ok;
+		}
+
+		void NoteBind(ID3D11DepthStencilView* a_dsv)
+		{
+			if (!ScreenSized(a_dsv)) {
+				return;
+			}
+			std::lock_guard g{ depthLock };
+			for (auto& d : frameDepths) {
+				if (d.dsv == a_dsv) {
+					++d.binds;
+					return;
+				}
+			}
+			if (frameDepths.size() < 16) {
+				a_dsv->AddRef();
+				const auto it = clearValues.find(a_dsv);
+				frameDepths.push_back({ a_dsv, it != clearValues.end() ? it->second : 1.0f, 1 });
+			}
+		}
 
 		void STDMETHODCALLTYPE HookClearDsv(ID3D11DeviceContext* a_ctx, ID3D11DepthStencilView* a_dsv, UINT a_flags, FLOAT a_depth, UINT8 a_stencil)
 		{
-			if (a_dsv && (a_flags & D3D11_CLEAR_DEPTH) && screenW) {
-				ID3D11Resource* res = nullptr;
-				a_dsv->GetResource(&res);
-				ID3D11Texture2D* tex = nullptr;
-				if (res && SUCCEEDED(res->QueryInterface(__uuidof(ID3D11Texture2D), reinterpret_cast<void**>(&tex)))) {
-					D3D11_TEXTURE2D_DESC td{};
-					tex->GetDesc(&td);
-					if (td.Width == screenW && td.Height == screenH && td.SampleDesc.Count == 1 && a_dsv != ownDsv) {
-						std::lock_guard g{ depthLock };
-						if (frameDepths.size() < 8) {
-							a_dsv->AddRef();
-							frameDepths.push_back({ a_dsv, a_depth });
-						}
-					}
-					tex->Release();
-				}
-				Release(res);
+			if (a_dsv && (a_flags & D3D11_CLEAR_DEPTH) && ScreenSized(a_dsv)) {
+				std::lock_guard g{ depthLock };
+				clearValues[a_dsv] = a_depth;
 			}
 			origClearDsv(a_ctx, a_dsv, a_flags, a_depth, a_stencil);
+		}
+
+		// Which depth buffer Mad Max draws its scene with: the screen-sized one it binds most often
+		// in a frame (G-buffer, forward passes, particles). SkyCraft gets Skyrim's main depth by name;
+		// Mad Max's is found by use.
+		using OMSetRTFn = void(STDMETHODCALLTYPE*)(ID3D11DeviceContext*, UINT, ID3D11RenderTargetView* const*, ID3D11DepthStencilView*);
+		OMSetRTFn origOMSetRT = nullptr;
+		void STDMETHODCALLTYPE HookOMSetRT(ID3D11DeviceContext* a_ctx, UINT a_count, ID3D11RenderTargetView* const* a_rtvs, ID3D11DepthStencilView* a_dsv)
+		{
+			NoteBind(a_dsv);
+			origOMSetRT(a_ctx, a_count, a_rtvs, a_dsv);
 		}
 
 		void HookDepthClears(ID3D11DeviceContext* a_context)
@@ -329,12 +366,11 @@ float4 PSMain(VSOut i) : SV_Target
 			if (origClearDsv) {
 				return;
 			}
-			void* target = (*reinterpret_cast<void***>(a_context))[53];  // ID3D11DeviceContext::ClearDepthStencilView
-			if (MH_CreateHook(target, reinterpret_cast<void*>(&HookClearDsv), reinterpret_cast<void**>(&origClearDsv)) == MH_OK && MH_EnableHook(target) == MH_OK) {
-				logger::info("world renderer: watching depth clears for Mad Max's scene depth");
-			}
+			auto** vt = *reinterpret_cast<void***>(a_context);
+			bool   ok = MH_CreateHook(vt[53], reinterpret_cast<void*>(&HookClearDsv), reinterpret_cast<void**>(&origClearDsv)) == MH_OK && MH_EnableHook(vt[53]) == MH_OK;
+			ok = ok && MH_CreateHook(vt[33], reinterpret_cast<void*>(&HookOMSetRT), reinterpret_cast<void**>(&origOMSetRT)) == MH_OK && MH_EnableHook(vt[33]) == MH_OK;
+			logger::info("world renderer: {}", ok ? "watching depth buffer use for Mad Max's scene depth" : "couldn't watch depth buffers");
 		}
-
 		// ---- setup ------------------------------------------------------------------------------
 		bool Compile(const char* a_entry, const char* a_target, ID3DBlob** a_out)
 		{
@@ -1097,26 +1133,32 @@ float4 PSMain(VSOut i) : SV_Target
 			DepthCandidate sceneDepth{};
 			{
 				std::lock_guard g{ depthLock };
-				if (!frameDepths.empty()) {
-					sceneDepth = frameDepths.front();
+				for (const auto& d : frameDepths) {
+					if (d.binds > sceneDepth.binds) {
+						sceneDepth = d;
+					}
+				}
+				if (sceneDepth.dsv) {
 					sceneDepth.dsv->AddRef();
 				}
+				static std::uint64_t lastReport = 0;
+				if (::GetTickCount64() - lastReport > 10000) {
+					lastReport = ::GetTickCount64();
+					std::string list;
+					for (const auto& d : frameDepths) {
+						list += std::format(" [{} binds, clear {:.0f}{}]", d.binds, d.clear, d.dsv == sceneDepth.dsv ? ", used" : "");
+					}
+					logger::info("world renderer: screen-sized depth buffers this frame:{}", list.empty() ? std::string(" none") : list);
+				}
 			}
-			const bool reversed = sceneDepth.dsv ? sceneDepth.clear < 0.5f : false;
-			if (!sceneDepth.dsv && !EnsureOwnDepth(bbDesc.Width, bbDesc.Height)) {
+			// No scene depth (loading screens, menus): Minecraft's things would show through every wall,
+			// so they aren't drawn at all.
+			if (!sceneDepth.dsv) {
 				Release(rtv);
 				return;
 			}
-			ID3D11DepthStencilView* dsv = sceneDepth.dsv ? sceneDepth.dsv : ownDsv;
-			if (!sceneDepth.dsv) {
-				a_context->ClearDepthStencilView(ownDsv, D3D11_CLEAR_DEPTH, 1.0f, 0);
-			}
-			static int loggedDepth = -1;
-			if (loggedDepth != (sceneDepth.dsv ? 1 : 0)) {
-				loggedDepth = sceneDepth.dsv ? 1 : 0;
-				logger::info("world renderer: {}", sceneDepth.dsv ? std::format("depth-testing against Mad Max's scene ({} Z)", reversed ? "reversed" : "standard")
-				                                                 : std::string("no scene depth found: Minecraft things draw over Mad Max's world"));
-			}
+			const bool              reversed = sceneDepth.clear < 0.5f;
+			ID3D11DepthStencilView* dsv = sceneDepth.dsv;
 
 			// Entities, cracks and the outline around an integer origin near the camera.
 			const auto camMc = MadMax::ToMc(camPos);
