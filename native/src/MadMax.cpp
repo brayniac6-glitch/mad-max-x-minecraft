@@ -74,12 +74,25 @@ namespace madcraft
 		using RaycastFn = std::uint8_t(__fastcall*)(void*, const char*, const float*, float, float, void*, void*, void*, char, int, int*);
 		using FilterCtorFn = void*(__fastcall*)(void*, int, int, int, void*);
 
+		// The collector: by default CIgnoreCharactersAndVehiclesRaycastFilter, built as the game's own
+		// "DebugSpawner" ray builds it (base collector FUN_140808600(buf, 0, 0, 0), then its vftable):
+		// everything but people and cars, so ships, wrecks, fences and props are solid too, but never
+		// Max himself. Without [Hooks] RaycastFilterBase/Vtable: the static-only filter (terrain, rocks).
+		using FilterBaseFn = void*(__fastcall*)(void*, int, int, int);
+		FilterBaseFn   filterBase = nullptr;
+		std::uintptr_t filterVtable = 0;
+
 		bool CallRaycast(RaycastFn a_fn, FilterCtorFn a_ctor, void* a_sys, const float* a_ray, float a_max, float& a_fraction)
 		{
 			alignas(16) std::uint8_t filter[0x100]{};
 			alignas(16) std::uint8_t result[0x80]{};
 			__try {
-				a_ctor(filter, 3, 0, 0, nullptr);
+				if (filterBase && filterVtable) {
+					filterBase(filter, 0, 0, 0);
+					*reinterpret_cast<std::uintptr_t*>(filter) = filterVtable;
+				} else {
+					a_ctor(filter, 3, 0, 0, nullptr);
+				}
 				const auto hit = a_fn(a_sys, "MadCraft", a_ray, 0.0f, a_max, result, filter, nullptr, 0, 0, nullptr);
 				a_fraction = *reinterpret_cast<float*>(result + 0x14);
 				return (hit & 1) != 0 && a_fraction < 1.0f;
@@ -292,6 +305,16 @@ namespace madcraft
 			ParseChain(physicsSystem, "PhysicsSystem");
 			ParseChain(raycastFn, "RaycastFunction");
 			ParseChain(staticFilterCtor, "RaycastStaticFilter");
+			{
+				Chain base, vt;
+				ParseChain(base, "RaycastFilterBase");
+				ParseChain(vt, "RaycastFilterVtable");
+				if (base.valid && vt.valid) {
+					filterBase = reinterpret_cast<FilterBaseFn>(base.base);
+					filterVtable = vt.base;
+					logger::info("collision: rays hit everything but characters and vehicles (ships, wrecks, props)");
+				}
+			}
 			setTransformSlot = static_cast<int>(IniDouble("Hooks", "iSetTransformSlot", -1));
 			scale = IniDouble("World", "fUnitsPerBlock", proto::kUnitsPerBlock);
 			signX = IniBool("World", "bFlipX", false) ? -1.0 : 1.0;
