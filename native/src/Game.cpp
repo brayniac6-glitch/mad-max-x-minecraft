@@ -2,6 +2,7 @@
 
 #include "CameraDriver.h"
 #include "Collision.h"
+#include "HideMax.h"
 
 // The per-frame bridge, modelled on SkyCraft's Game.cpp (MIT, chasmlol): Mad Max tells Minecraft
 // where Max is; once Minecraft has arrived there, Minecraft's player drives Max.
@@ -49,6 +50,7 @@ namespace madcraft
 		// [Camera] bFirstPerson: Mad Max renders from Minecraft's eyes (and its F5 views) while
 		// Minecraft drives, like SkyCraft. Otherwise Mad Max's own camera sets the look.
 		const bool firstPerson = IniBool("Camera", "bFirstPerson", true);
+		const bool hideMaxModel = IniBool("Camera", "bHideMax", true);
 		const bool useGameCamera = !firstPerson && IniBool("Camera", "bUseGameCamera", true);
 		float      cameraHanded = 0.0f;  // +1/-1: Mad Max's camera rows satisfy row0 = s * (row1 x row2)
 		int        camAxis = -1;
@@ -402,6 +404,8 @@ namespace madcraft
 			} else {
 				CameraDriver::Release();
 			}
+			// Max's own model out of the picture while Minecraft drives (Steve is there instead).
+			HideMax::Update(puppet && hideMaxModel, feet);
 			// Steve's body: always with Mad Max's camera; with Minecraft's, only in its F5 views.
 			st.bodyValid = inGame && (!firstPerson || !puppet || mc.cameraMode != 0);
 			st.mcGuiScale = haveMc ? static_cast<int>(mc.guiScale) : 0;

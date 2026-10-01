@@ -11,4 +11,4 @@ H09	ActorList	3	Nearby War Boys etc: pos, bbox, health	chain			open	for proxy en
 H10	DamageActor	3	Apply Minecraft hits to Mad Max NPCs	function			open	
 H11	PlayerHurt	3	Intercept damage to Max and forward to Minecraft	function			open	
 H12	DepthBuffer	4	Scene depth for compositing Minecraft blocks	d3d			open	found from D3D11 state, no RE
-H13	HidePlayerMesh	2	Hide Max's model so Steve replaces him	function			open	or scale mesh to 0
+H13	HidePlayerMesh	2	Hide Max's model so Steve replaces him	function	MadMax.exe+8E81B0, +8E7C30		found	NGraphicsEngine::CRenderBlockCharacter vft 14129B878 slots 27/28 (block, context, instance); instance world matrix at +0x20 (pos +0x50), opacity byte at +3. Draws of the instance at Max position are skipped while Minecraft drives.

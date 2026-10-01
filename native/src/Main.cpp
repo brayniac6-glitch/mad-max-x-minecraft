@@ -1,5 +1,6 @@
 #include "CameraDriver.h"
 #include "Game.h"
+#include "HideMax.h"
 
 #include <MinHook.h>
 
@@ -61,6 +62,7 @@ namespace
 	void StartupThread()
 	{
 		madcraft::CameraDriver::Install();
+		madcraft::HideMax::Install();
 		for (int i = 0; i < 600 && !madcraft::Overlay::Install(); ++i) {
 			std::this_thread::sleep_for(std::chrono::milliseconds(500));
 		}
