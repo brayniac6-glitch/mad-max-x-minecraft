@@ -1,5 +1,6 @@
 #include "Game.h"
 
+#include "CameraDriver.h"
 #include "Collision.h"
 
 // The per-frame bridge, modelled on SkyCraft's Game.cpp (MIT, chasmlol): Mad Max tells Minecraft
@@ -45,7 +46,11 @@ namespace madcraft
 		std::atomic<float> groundUnderMax{ -1.0e30f };  // MC y of Mad Max's ground under Max (game thread)
 
 		// Game-camera look (see Tick): the calibrated forward axis (row*2 + negated), -1 = unknown.
-		const bool useGameCamera = IniBool("Camera", "bUseGameCamera", true);
+		// [Camera] bFirstPerson: Mad Max renders from Minecraft's eyes (and its F5 views) while
+		// Minecraft drives, like SkyCraft. Otherwise Mad Max's own camera sets the look.
+		const bool firstPerson = IniBool("Camera", "bFirstPerson", true);
+		const bool useGameCamera = !firstPerson && IniBool("Camera", "bUseGameCamera", true);
+		float      cameraHanded = 0.0f;  // +1/-1: Mad Max's camera rows satisfy row0 = s * (row1 x row2)
 		int        camAxis = -1;
 		int        camCandidate = -1;
 		int        camVotes = 0;
@@ -358,6 +363,48 @@ namespace madcraft
 			}
 			st.puppeting = puppet;
 			st.mcCrosshair = puppet && mc.cameraMode == 0 && !st.mcScreenOpen && !st.gameMenuOpen;
+
+			// Minecraft's eyes as Mad Max's camera while Minecraft drives: first person, or its F5
+			// views (behind; in front looking back), pulled in by Minecraft's own zoom collision.
+			if (firstPerson && puppet && !st.gameMenuOpen) {
+				const auto rc = MadMax::RenderCameraObject();
+				if (rc && cameraHanded == 0.0f) {
+					float gm[16];
+					if (MadMax::GetCameraMatrix(gm)) {
+						const float c[3] = { gm[5] * gm[10] - gm[6] * gm[9], gm[6] * gm[8] - gm[4] * gm[10], gm[4] * gm[9] - gm[5] * gm[8] };
+						cameraHanded = (c[0] * gm[0] + c[1] * gm[1] + c[2] * gm[2]) >= 0.0f ? 1.0f : -1.0f;
+						logger::info("camera driver: Mad Max's camera rows are {}-handed; Minecraft's eyes take over", cameraHanded > 0 ? "right" : "left");
+					}
+				}
+				if (rc && cameraHanded != 0.0f) {
+					const bool  front = mc.cameraMode == 2;
+					const float yaw = (front ? st.yaw + 180.0f : st.yaw) * 0.017453292f;
+					const float pitch = (front ? -st.pitch : st.pitch) * 0.017453292f;
+					// Minecraft's look direction (x, y, z), into Mad Max's axes.
+					const Vec3 dirW = MadMax::FromMc(-std::sin(yaw) * std::cos(pitch), -std::sin(pitch), std::cos(yaw) * std::cos(pitch));
+					const float dl = std::sqrt(dirW.x * dirW.x + dirW.y * dirW.y + dirW.z * dirW.z);
+					const float f[3] = { dirW.x / dl, dirW.y / dl, dirW.z / dl };
+					const float r2[3] = { -f[0], -f[1], -f[2] };  // Mad Max's cameras look along -row 2
+					float       r1[3] = { -r2[1] * r2[0], 1.0f - r2[1] * r2[1], -r2[1] * r2[2] };  // world up, made orthogonal
+					const float ul = std::sqrt(r1[0] * r1[0] + r1[1] * r1[1] + r1[2] * r1[2]);
+					for (float& v : r1) {
+						v /= std::max(ul, 1e-4f);
+					}
+					const float r0[3] = { cameraHanded * (r1[1] * r2[2] - r1[2] * r2[1]), cameraHanded * (r1[2] * r2[0] - r1[0] * r2[2]),
+						cameraHanded * (r1[0] * r2[1] - r1[1] * r2[0]) };
+					Vec3 eye = MadMax::FromMc(mc.eyeX, mc.eyeY, mc.eyeZ);
+					if (mc.cameraMode != 0 && mc.cameraDistance > 0.0f) {
+						const float d = mc.cameraDistance * static_cast<float>(proto::kUnitsPerBlock);
+						eye = { eye.x - f[0] * d, eye.y - f[1] * d, eye.z - f[2] * d };
+					}
+					const float m[16] = { r0[0], r0[1], r0[2], 0.0f, r1[0], r1[1], r1[2], 0.0f, r2[0], r2[1], r2[2], 0.0f, eye.x, eye.y, eye.z, 1.0f };
+					CameraDriver::Set(rc, m);
+				}
+			} else {
+				CameraDriver::Release();
+			}
+			// Steve's body: always with Mad Max's camera; with Minecraft's, only in its F5 views.
+			st.bodyValid = inGame && (!firstPerson || !puppet || mc.cameraMode != 0);
 			st.mcGuiScale = haveMc ? static_cast<int>(mc.guiScale) : 0;
 
 			// Fall rescue: the collision field can have a hole (ground not streamed in yet). Minecraft

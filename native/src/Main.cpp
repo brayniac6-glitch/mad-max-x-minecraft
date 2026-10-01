@@ -1,3 +1,4 @@
+#include "CameraDriver.h"
 #include "Game.h"
 
 #include <MinHook.h>
@@ -59,6 +60,7 @@ namespace
 	// Runs off the loader lock: waits for the game's window and D3D11 device, then hooks Present.
 	void StartupThread()
 	{
+		madcraft::CameraDriver::Install();
 		for (int i = 0; i < 600 && !madcraft::Overlay::Install(); ++i) {
 			std::this_thread::sleep_for(std::chrono::milliseconds(500));
 		}

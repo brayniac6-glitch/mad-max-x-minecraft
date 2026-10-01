@@ -395,6 +395,12 @@ namespace madcraft
 			return a_m[15] != 0.0f || a_m[11] != 0.0f;  // a projection has w from z
 		}
 
+		std::uintptr_t RenderCameraObject()
+		{
+			std::uintptr_t addr = 0;
+			return Resolve(cameraMatrix, addr) ? addr - 0x54 : 0;  // the chain ends at its world matrix (+0x54)
+		}
+
 		bool RaycastAvailable()
 		{
 			return physicsSystem.valid && raycastFn.valid && staticFilterCtor.valid;
