@@ -41,9 +41,11 @@ namespace madcraft
 cbuffer Frame : register(b0)
 {
 	row_major float4x4 viewProj;  // camera-relative Mad Max world (metres, Y up) -> clip, row vectors
-	float4 light;                 // x: daylight (0..1), y: minimum brightness, z: face shading on
+	float4 light;                 // x: daylight (0..1), y: minimum brightness, z: face shading on, w: scene lighting on
 	float4 axes;                  // x, z: +1/-1 Minecraft -> Mad Max axis signs
+	float4 scene;                 // x: 1/width, y: 1/height, z: local mip, w: gain
 };
+Texture2D sceneColor : register(t1);  // Mad Max's frame before our blocks, mipmapped (blurred)
 cbuffer Object : register(b1)
 {
 	float4 offset;                // camera-relative Mad Max position of the mesh's Minecraft origin
@@ -106,7 +108,18 @@ float4 PSMain(VSOut i) : SV_Target
 	}
 	float  sky = Curve(i.light.y) * light.x;
 	float  block = Curve(i.light.x);
-	float3 lit = max(max(sky, light.y), block * float3(1.0, 0.85, 0.65));
+	float3 lit = max(sky, light.y);
+	if (light.w > 0.5) {
+		// Lit like what's around it in Mad Max's own picture: the blurred frame near this pixel
+		// (shade, dusk, haze, colour grading) mixed with the whole frame's average, so blocks sit
+		// in the scene's light instead of Minecraft's noon.
+		float2 suv = i.pos.xy * scene.xy;
+		float3 local = sceneColor.SampleLevel(atlasSampler, suv, scene.z).rgb;
+		float3 global = sceneColor.SampleLevel(atlasSampler, float2(0.5, 0.5), 12.0).rgb;
+		float3 env = lerp(global, local, 0.65) * scene.w;
+		lit = env * lerp(0.35, 1.0, Curve(i.light.y));  // Minecraft's sky light still darkens roofed-over faces
+	}
+	lit = max(lit, block * float3(1.0, 0.85, 0.65));    // torches, glowstone, lava still glow
 	float3 c = t.rgb * i.color.rgb * lit * shade;
 	return float4(saturate(c), (i.flags & 2) ? t.a * i.color.a : 1.0);
 }
@@ -117,7 +130,52 @@ float4 PSMain(VSOut i) : SV_Target
 			float viewProj[4][4];
 			float light[4];
 			float axes[4];
+			float scene[4];
 		};
+
+		// A mipmapped copy of Mad Max's frame (before our blocks): the scene's light for the blocks.
+		ID3D11Texture2D*          sceneTex = nullptr;
+		ID3D11ShaderResourceView* sceneSrv = nullptr;
+		UINT                      sceneW = 0, sceneH = 0;
+		DXGI_FORMAT               sceneFormat = DXGI_FORMAT_UNKNOWN;
+		bool                      sceneFailed = false;
+
+		bool CopyScene(ID3D11Device* a_device, ID3D11DeviceContext* a_context, ID3D11Texture2D* a_backBuffer, const D3D11_TEXTURE2D_DESC& a_desc)
+		{
+			if (sceneFailed) {
+				return false;
+			}
+			if (!sceneTex || sceneW != a_desc.Width || sceneH != a_desc.Height || sceneFormat != a_desc.Format) {
+				if (sceneSrv) {
+					sceneSrv->Release();
+					sceneSrv = nullptr;
+				}
+				if (sceneTex) {
+					sceneTex->Release();
+					sceneTex = nullptr;
+				}
+				D3D11_TEXTURE2D_DESC td{};
+				td.Width = a_desc.Width;
+				td.Height = a_desc.Height;
+				td.MipLevels = 0;  // full chain, down to 1x1
+				td.ArraySize = 1;
+				td.Format = a_desc.Format;
+				td.SampleDesc.Count = 1;
+				td.Usage = D3D11_USAGE_DEFAULT;
+				td.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
+				td.MiscFlags = D3D11_RESOURCE_MISC_GENERATE_MIPS;
+				if (FAILED(a_device->CreateTexture2D(&td, nullptr, &sceneTex)) || FAILED(a_device->CreateShaderResourceView(sceneTex, nullptr, &sceneSrv))) {
+					logger::warn("world renderer: no scene copy (format {}); blocks keep Minecraft's own light", static_cast<int>(a_desc.Format));
+					sceneFailed = true;
+					return false;
+				}
+				sceneW = a_desc.Width, sceneH = a_desc.Height, sceneFormat = a_desc.Format;
+			}
+			// Top mip only, from the back buffer; the rest is generated (a blur pyramid).
+			a_context->CopySubresourceRegion(sceneTex, 0, 0, 0, 0, a_backBuffer, 0, nullptr);
+			a_context->GenerateMips(sceneSrv);
+			return true;
+		}
 
 		struct alignas(16) ObjectConstants
 		{
@@ -759,6 +817,10 @@ float4 PSMain(VSOut i) : SV_Target
 		// ---- drawing -----------------------------------------------------------------------------
 		Vec3 camPos{};  // this frame's camera, Mad Max world
 
+		// [Render] bSceneLighting / fSceneGain: blocks lit by Mad Max's own picture around them.
+		const bool  sceneLighting = IniBool("Render", "bSceneLighting", true);
+		const float sceneGain = static_cast<float>(IniDouble("Render", "fSceneGain", 1.8));
+
 		// A Minecraft point (blocks) -> camera-relative Mad Max position, in double precision.
 		void SetObjectOffset(ID3D11DeviceContext* a_context, const double a_mc[3])
 		{
@@ -856,7 +918,7 @@ float4 PSMain(VSOut i) : SV_Target
 			ID3D11PixelShader*        psh{};
 			ID3D11Buffer*             vsCb[2]{};
 			ID3D11Buffer*             psCb[2]{};
-			ID3D11ShaderResourceView* srv[1]{};
+			ID3D11ShaderResourceView* srv[2]{};
 			ID3D11SamplerState*       samplers[1]{};
 
 			void Save(ID3D11DeviceContext* a_c)
@@ -873,7 +935,7 @@ float4 PSMain(VSOut i) : SV_Target
 				a_c->PSGetShader(&psh, nullptr, nullptr);
 				a_c->VSGetConstantBuffers(0, 2, vsCb);
 				a_c->PSGetConstantBuffers(0, 2, psCb);
-				a_c->PSGetShaderResources(0, 1, srv);
+				a_c->PSGetShaderResources(0, 2, srv);
 				a_c->PSGetSamplers(0, 1, samplers);
 			}
 
@@ -891,7 +953,7 @@ float4 PSMain(VSOut i) : SV_Target
 				a_c->PSSetShader(psh, nullptr, 0);
 				a_c->VSSetConstantBuffers(0, 2, vsCb);
 				a_c->PSSetConstantBuffers(0, 2, psCb);
-				a_c->PSSetShaderResources(0, 1, srv);
+				a_c->PSSetShaderResources(0, 2, srv);
 				a_c->PSSetSamplers(0, 1, samplers);
 				for (auto*& r : rtv) {
 					Release(r);
@@ -911,6 +973,7 @@ float4 PSMain(VSOut i) : SV_Target
 					Release(b);
 				}
 				Release(srv[0]);
+				Release(srv[1]);
 				Release(samplers[0]);
 			}
 		};
@@ -953,11 +1016,23 @@ float4 PSMain(VSOut i) : SV_Target
 			}
 			D3D11_TEXTURE2D_DESC bbDesc{};
 			backBuffer->GetDesc(&bbDesc);
+			const bool              haveScene = sceneLighting && CopyScene(device, a_context, backBuffer, bbDesc);
 			ID3D11RenderTargetView* rtv = nullptr;
 			const auto              hr = device->CreateRenderTargetView(backBuffer, nullptr, &rtv);
 			Release(backBuffer);
 			if (FAILED(hr)) {
 				return;
+			}
+			if (haveScene) {
+				fc.light[3] = 1.0f;
+				fc.scene[0] = 1.0f / float(bbDesc.Width);
+				fc.scene[1] = 1.0f / float(bbDesc.Height);
+				fc.scene[2] = 5.0f;  // 1/32 resolution: a block's surroundings
+				fc.scene[3] = sceneGain;
+				if (SUCCEEDED(a_context->Map(frameCb, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped))) {
+					std::memcpy(mapped.pData, &fc, sizeof(fc));
+					a_context->Unmap(frameCb, 0);
+				}
 			}
 			DepthCandidate sceneDepth{};
 			{
@@ -1012,6 +1087,8 @@ float4 PSMain(VSOut i) : SV_Target
 			a_context->VSSetShader(vs, nullptr, 0);
 			a_context->PSSetShader(ps, nullptr, 0);
 			a_context->PSSetShaderResources(0, 1, &atlasSrv);
+			ID3D11ShaderResourceView* sceneView = haveScene ? sceneSrv : nullptr;
+			a_context->PSSetShaderResources(1, 1, &sceneView);
 			const UINT stride = sizeof(Vertex), zero = 0;
 
 			// Opaque and cutout blocks, Steve and other entities.

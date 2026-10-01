@@ -175,12 +175,15 @@ namespace madcraft::Collision
 		}
 		const int   cx = std::clamp(static_cast<int>(std::floor(a_x - rx * kRegion)), 0, kRegion - 1);
 		const int   cz = std::clamp(static_cast<int>(std::floor(a_z - rz * kRegion)), 0, kRegion - 1);
+		// The surface at this exact point (bilinear across the block's corners), like the triangles
+		// Minecraft stands on: on a slope the highest corner can be blocks above the player.
 		const auto& h = it->second.heights;
-		float       best = kNoGround;
-		for (const float v : { h[cz][cx], h[cz][cx + 1], h[cz + 1][cx], h[cz + 1][cx + 1] }) {
-			best = std::max(best, v);
+		const float c00 = h[cz][cx], c10 = h[cz][cx + 1], c01 = h[cz + 1][cx], c11 = h[cz + 1][cx + 1];
+		if (c00 == kNoGround || c10 == kNoGround || c01 == kNoGround || c11 == kNoGround) {
+			return kNoGround;
 		}
-		return best;
+		const float fx = static_cast<float>(a_x - std::floor(a_x)), fz = static_cast<float>(a_z - std::floor(a_z));
+		return (c00 * (1 - fx) + c10 * fx) * (1 - fz) + (c01 * (1 - fx) + c11 * fx) * fz;
 	}
 
 	bool Available()
