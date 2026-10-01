@@ -538,7 +538,15 @@ namespace madcraft
 			// off a ledge: Minecraft well below the ground the game thread measured under Max. Once,
 			// then a cooldown.
 			const float ground = groundUnderMax.load();
-			if (puppet && rescueFrames == 0 && ::GetTickCount64() - lastRescueMs > 2000 && ground > -1.0e29f &&
+			// Not while gliding or flying fast (elytra): skimming low over a slope isn't falling through.
+			static McVec  prevFeetForSpeed{};
+			static double horizSpeed = 0.0;
+			if (haveMc && dt > 0.0f) {
+				const double moved = std::hypot(smoothFeet.x - prevFeetForSpeed.x, smoothFeet.z - prevFeetForSpeed.z);
+				horizSpeed = horizSpeed * 0.9 + (moved / dt) * 0.1;
+				prevFeetForSpeed = smoothFeet;
+			}
+			if (puppet && horizSpeed < 8.0 && rescueFrames == 0 && ::GetTickCount64() - lastRescueMs > 2000 && ground > -1.0e29f &&
 				!(mc.flags & proto::kMcOnGround) && !(mc.flags & proto::kMcFlying) && mc.y < ground - 2.0) {
 				lastRescueMs = ::GetTickCount64();
 				const McVec target = haveLastSafe ? lastSafe : McVec{ mc.x, double(ground) + 0.1, mc.z };
