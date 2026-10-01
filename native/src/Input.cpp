@@ -76,7 +76,39 @@ namespace madcraft
 		bool                       carDown = false;
 		bool                       injectedDown = false;  // buffered: the press we added is down
 
-		bool Injecting() { return ::GetTickCount64() < injectUntilMs; }
+		// Pressed for at least carHoldMs, and for as long as the car key is held (Mad Max's get-in key
+		// may want holding).
+		bool                       carInjectHeld = false;  // this press is being passed to Mad Max
+		bool Injecting() { return ::GetTickCount64() < injectUntilMs || carInjectHeld; }
+
+		// In the first-person car camera: PgUp/PgDn raise/lower the eyes, Home/End move them forward/
+		// back; saved to the ini's [Vehicle].
+		bool AdjustCarEyes(std::uint32_t a_dik)
+		{
+			auto&       st = State();
+			const char* key = nullptr;
+			float       value = 0.0f;
+			switch (a_dik) {
+			case 0xC9:  // PgUp
+			case 0xD1:  // PgDn
+				value = st.carEyeY + (a_dik == 0xC9 ? 0.1f : -0.1f);
+				st.carEyeY = value;
+				key = "fFirstPersonEyeY";
+				break;
+			case 0xC7:  // Home
+			case 0xCF:  // End
+				value = st.carEyeForward + (a_dik == 0xC7 ? 0.2f : -0.2f);
+				st.carEyeForward = value;
+				key = "fFirstPersonEyeForward";
+				break;
+			default:
+				return false;
+			}
+			const auto text = std::format("{:.2f}", value);
+			::WritePrivateProfileStringA("Vehicle", key, text.c_str(), (ModDir() / "MadCraft.ini").string().c_str());
+			logger::info("vehicle: first-person eyes {} = {}", key, text);
+			return true;
+		}
 
 		// What Minecraft has been told is held (diagnostics), and how many presses it got.
 		std::array<std::atomic<bool>, 256> sentKeys{};
@@ -134,6 +166,12 @@ namespace madcraft
 				f8Down = a_down;
 				return;
 			}
+			if (st.carCam && (a_dik == 0xC9 || a_dik == 0xD1 || a_dik == 0xC7 || a_dik == 0xCF)) {
+				if (a_down) {
+					AdjustCarEyes(a_dik);
+				}
+				return;
+			}
 			// F5 in a car (Minecraft mode): first person in the seat <-> Mad Max's chase camera.
 			if (a_dik == kDikF5 && st.driving && !st.madMaxControls) {
 				if (a_down && !f5Down) {
@@ -150,10 +188,14 @@ namespace madcraft
 				if (a_down && !carDown && !st.mcScreenOpen && !st.gameMenuOpen && (st.minecraftOwnsPlayer || st.driving)) {
 					const auto now = ::GetTickCount64();
 					injectUntilMs = now + carHoldMs;
-					st.interactUntilMs = now + 1500;
+					st.interactUntilMs = now + 2500;
+					carInjectHeld = true;
 					logger::info("vehicle: car key -> Mad Max's key {:02X} ({})", madMaxCarKey, st.driving ? "getting out" : "getting in / interacting");
 				}
 				carDown = a_down;
+				if (!a_down) {
+					carInjectHeld = false;
+				}
 				return;  // not Minecraft's (swap hands) and not Mad Max's own
 			}
 			if (!RouteToMinecraft()) {
@@ -432,7 +474,7 @@ namespace madcraft
 				}
 			};
 			carKey = hexKey("sCarKey", 0x21);
-			madMaxCarKey = hexKey("sMadMaxCarKey", 0x12);
+			madMaxCarKey = hexKey("sMadMaxCarKey", 0x21);
 			carHoldMs = static_cast<std::uint64_t>(std::max(50.0, IniDouble("Input", "iCarKeyHoldMs", 300)));
 			logger::info("input: car key {:02X} presses Mad Max's {:02X} for {} ms", carKey, madMaxCarKey, carHoldMs);
 			const auto list = IniString("Input", "sGameKeys", "");

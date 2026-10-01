@@ -162,10 +162,10 @@ namespace madcraft
 		const bool hideMaxModel = IniBool("Camera", "bHideMax", true);
 		// Steve in a car's seat: how far above Max's (seated) position his feet go, in blocks.
 		const float seatOffset = static_cast<float>(IniDouble("Vehicle", "fSeatOffsetY", 0.0));
-		// First person in a car: the eyes above Max's seated position and forward of it (metres).
-		const float carEyeY = static_cast<float>(IniDouble("Vehicle", "fFirstPersonEyeY", 0.9));
-		const float carEyeForward = static_cast<float>(IniDouble("Vehicle", "fFirstPersonEyeForward", 0.0));
+		// First person in a car: looking this many degrees down at the road to start with.
+		const float carBasePitch = static_cast<float>(IniDouble("Vehicle", "fFirstPersonPitch", 6.0));
 		float       carLookYaw = 0.0f, carLookPitch = 0.0f;  // the mouse in the cab, relative to the car
+		bool        carEyesLoaded = false;
 		const bool useGameCamera = !firstPerson && IniBool("Camera", "bUseGameCamera", true);
 		float      cameraHanded = 0.0f;  // +1/-1: Mad Max's camera rows satisfy row0 = s * (row1 x row2)
 		int        camAxis = -1;
@@ -399,7 +399,13 @@ namespace madcraft
 			const bool carCam = driving && firstPerson && st.carFirstPerson && !st.madMaxControls && !st.gameMenuOpen;
 			if (carCam != st.carCam) {
 				logger::info("vehicle: {} camera", carCam ? "first-person" : "Mad Max's");
-				carLookYaw = carLookPitch = 0.0f;
+				carLookYaw = 0.0f;
+				carLookPitch = carBasePitch;
+			}
+			if (!carEyesLoaded) {
+				carEyesLoaded = true;
+				st.carEyeY = static_cast<float>(IniDouble("Vehicle", "fFirstPersonEyeY", 1.4));
+				st.carEyeForward = static_cast<float>(IniDouble("Vehicle", "fFirstPersonEyeForward", 0.4));
 			}
 			st.carCam = carCam;
 			const auto feetMc = MadMax::ToMc(feet);
@@ -556,7 +562,8 @@ namespace madcraft
 						const float cy = carYaw * 0.017453292f;
 						const Vec3  fw = MadMax::FromMc(-std::sin(cy), 0.0, std::cos(cy));
 						const Vec3  base = MadMax::FromMc(0.0, 0.0, 0.0);
-						eye = { feet.x + (fw.x - base.x) * carEyeForward, feet.y + carEyeY, feet.z + (fw.z - base.z) * carEyeForward };
+						const float ahead = st.carEyeForward;
+						eye = { feet.x + (fw.x - base.x) * ahead, feet.y + st.carEyeY, feet.z + (fw.z - base.z) * ahead };
 					} else if (mc.cameraMode != 0 && mc.cameraDistance > 0.0f) {
 						const float d = mc.cameraDistance * static_cast<float>(proto::kUnitsPerBlock);
 						eye = { eye.x - f[0] * d, eye.y - f[1] * d, eye.z - f[2] * d };

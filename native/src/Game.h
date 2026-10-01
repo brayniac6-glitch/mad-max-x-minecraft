@@ -54,6 +54,10 @@ namespace madcraft
 		// own chase camera. carCam: the first-person one is on now (the mouse looks around the cab).
 		std::atomic<bool>          carFirstPerson{ false };
 		std::atomic<bool>          carCam{ false };
+		// The first-person car eyes (metres above / forward of Max's seat), adjustable in the car with
+		// PgUp/PgDn and Home/End, saved to the ini.
+		std::atomic<float>         carEyeY{ 1.4f };
+		std::atomic<float>         carEyeForward{ 0.4f };
 
 		std::atomic<bool> mcCrosshair{ false };
 		std::atomic<int>  mcGuiScale{ 0 };
