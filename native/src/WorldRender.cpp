@@ -301,7 +301,57 @@ float4 PSMain(VSOut i) : SV_Target
 			ID3D11DepthStencilView* dsv{ nullptr };
 			float                   clear{ 1.0f };
 			int                     binds{ 0 };
+			int                     clears{ 0 };  // this frame
 		};
+		std::unordered_map<ID3D11DepthStencilView*, int> sinceClear;  // binds since each buffer's last clear
+
+		// A copy of the scene depth taken just before Mad Max clears it again mid-frame (for its HUD
+		// and effects): by Present the live buffer no longer holds the 3D scene.
+		ID3D11Texture2D*        snapTex = nullptr;
+		ID3D11DepthStencilView* snapDsv = nullptr;
+		ID3D11DepthStencilView* snapFrom = nullptr;
+		std::uint64_t           snapFrame = 0, frameNumber = 0;
+
+		void Snapshot(ID3D11DeviceContext* a_ctx, ID3D11DepthStencilView* a_dsv)
+		{
+			ID3D11Resource* res = nullptr;
+			a_dsv->GetResource(&res);
+			ID3D11Texture2D* tex = nullptr;
+			if (!res || FAILED(res->QueryInterface(__uuidof(ID3D11Texture2D), reinterpret_cast<void**>(&tex)))) {
+				Release(res);
+				return;
+			}
+			Release(res);
+			D3D11_TEXTURE2D_DESC td{};
+			tex->GetDesc(&td);
+			D3D11_TEXTURE2D_DESC have{};
+			if (snapTex) {
+				snapTex->GetDesc(&have);
+			}
+			if (!snapTex || have.Width != td.Width || have.Height != td.Height || have.Format != td.Format || snapFrom != a_dsv) {
+				Release(snapDsv);
+				Release(snapTex);
+				ID3D11Device* dev = nullptr;
+				a_ctx->GetDevice(&dev);
+				D3D11_DEPTH_STENCIL_VIEW_DESC dd{};
+				a_dsv->GetDesc(&dd);
+				td.MiscFlags = 0;
+				td.CPUAccessFlags = 0;
+				td.Usage = D3D11_USAGE_DEFAULT;
+				td.BindFlags = D3D11_BIND_DEPTH_STENCIL;
+				if (!dev || FAILED(dev->CreateTexture2D(&td, nullptr, &snapTex)) || FAILED(dev->CreateDepthStencilView(snapTex, &dd, &snapDsv))) {
+					Release(snapTex);
+					Release(dev);
+					return;
+				}
+				Release(dev);
+				snapFrom = a_dsv;
+				logger::info("world renderer: snapshotting Mad Max's scene depth before its mid-frame clear (format {})", static_cast<int>(td.Format));
+			}
+			a_ctx->CopyResource(snapTex, tex);
+			snapFrame = frameNumber;
+			tex->Release();
+		}
 		std::vector<DepthCandidate> frameDepths;  // this frame's screen-sized depth buffers, by use
 		std::unordered_map<ID3D11DepthStencilView*, float> clearValues;  // last clear value per buffer
 		UINT                        screenW = 0, screenH = 0;
@@ -331,6 +381,7 @@ float4 PSMain(VSOut i) : SV_Target
 				return;
 			}
 			std::lock_guard g{ depthLock };
+			++sinceClear[a_dsv];
 			for (auto& d : frameDepths) {
 				if (d.dsv == a_dsv) {
 					++d.binds;
@@ -349,6 +400,16 @@ float4 PSMain(VSOut i) : SV_Target
 			if (a_dsv && (a_flags & D3D11_CLEAR_DEPTH) && ScreenSized(a_dsv)) {
 				std::lock_guard g{ depthLock };
 				clearValues[a_dsv] = a_depth;
+				// It held something drawn this frame: keep a copy before it's wiped.
+				if (sinceClear[a_dsv] >= 3) {
+					Snapshot(a_ctx, a_dsv);
+				}
+				sinceClear[a_dsv] = 0;
+				for (auto& d : frameDepths) {
+					if (d.dsv == a_dsv) {
+						++d.clears;
+					}
+				}
 			}
 			origClearDsv(a_ctx, a_dsv, a_flags, a_depth, a_stencil);
 		}
@@ -1149,7 +1210,7 @@ float4 PSMain(VSOut i) : SV_Target
 					lastReport = ::GetTickCount64();
 					std::string list;
 					for (const auto& d : frameDepths) {
-						list += std::format(" [{} binds, clear {:.0f}{}]", d.binds, d.clear, d.dsv == sceneDepth.dsv ? ", used" : "");
+						list += std::format(" [{} binds, {} clears, clear {:.0f}{}]", d.binds, d.clears, d.clear, d.dsv == sceneDepth.dsv ? ", used" : "");
 					}
 					logger::info("world renderer: screen-sized depth buffers this frame:{}", list.empty() ? std::string(" none") : list);
 				}
@@ -1162,6 +1223,21 @@ float4 PSMain(VSOut i) : SV_Target
 			}
 			const bool              reversed = sceneDepth.clear < 0.5f;
 			ID3D11DepthStencilView* dsv = sceneDepth.dsv;
+			// Wiped again since the 3D scene was drawn into it (for the HUD and effects): use the copy
+			// taken just before that clear.
+			bool usingSnapshot = false;
+			{
+				std::lock_guard g{ depthLock };
+				if (sinceClear[sceneDepth.dsv] < 3 && snapDsv && snapFrom == sceneDepth.dsv && snapFrame == frameNumber) {
+					dsv = snapDsv;
+					usingSnapshot = true;
+				}
+			}
+			static int loggedSnap = -1;
+			if (loggedSnap != int(usingSnapshot)) {
+				loggedSnap = int(usingSnapshot);
+				logger::info("world renderer: depth from {}", usingSnapshot ? "the snapshot before Mad Max's mid-frame clear" : "the live scene depth");
+			}
 			// The matrix's own depth convention (SkyCraft's check): a point 2 m ahead vs 200 m ahead. If
 			// it's standard while Mad Max's buffer is reversed (the game flips it later in its renderer),
 			// our depth is flipped to match, or blocks would show through every wall.
@@ -1298,6 +1374,7 @@ float4 PSMain(VSOut i) : SV_Target
 			}
 			// Next frame's depth candidates start fresh.
 			std::lock_guard g{ depthLock };
+			++frameNumber;
 			for (auto& d : frameDepths) {
 				Release(d.dsv);
 			}
