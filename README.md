@@ -1,5 +1,5 @@
 # MadCraft: Mad Max × Minecraft
-![image alt]{https://github.com/brayniac6-glitch/mad-max-x-minecraft/blob/ce42237e496d2f352a837946c94994868ecc5c30/screenshot.png}
+![image alt](https://github.com/brayniac6-glitch/mad-max-x-minecraft/blob/ce42237e496d2f352a837946c94994868ecc5c30/screenshot.png)
 Play **Mad Max** as **Minecraft's Steve**. Mad Max and Minecraft run at the same time: you walk,
 jump, sprint, swim and fly (elytra!) with Minecraft's movement, but you're in Mad Max's wasteland.
 You can build in it, fight its War Boys with Minecraft weapons, and drive its cars.
