@@ -41,6 +41,11 @@ namespace madcraft
 		double bodyX{ 0.0 }, bodyY{ 0.0 }, bodyZ{ 0.0 };
 		bool   bodyValid{ false };
 
+		// How lit Mad Max's frame is around the player, as a Minecraft light level 0..1 (SceneLight),
+		// and the light the player holds in Minecraft (McState::heldLight).
+		std::atomic<float>         shade{ 1.0f };
+		std::atomic<std::uint32_t> heldLight{ 0 };
+
 		std::atomic<bool> mcCrosshair{ false };
 		std::atomic<int>  mcGuiScale{ 0 };
 

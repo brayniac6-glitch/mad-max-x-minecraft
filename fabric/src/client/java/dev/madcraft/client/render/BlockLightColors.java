@@ -2,6 +2,9 @@ package dev.madcraft.client.render;
 
 import dev.madcraft.link.Proto;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.BlockItem;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 
@@ -11,8 +14,29 @@ import net.minecraft.world.level.block.state.BlockState;
  * sea lanterns cool white, and so on. Packed as RGB8 (red in the low byte) with the
  * {@link Proto} light kind in the top byte.
  */
-final class BlockLightColors {
+public final class BlockLightColors {
 	private BlockLightColors() {
+	}
+
+	/**
+	 * The brightest light the player holds in either hand (a torch, lantern, glowstone, ...), for
+	 * Mad Max to light its world with: low byte the light level, then R, G, B; 0 = none.
+	 */
+	public static int held(Player player) {
+		int best = 0;
+		int bestLevel = 0;
+		for (ItemStack stack : new ItemStack[] { player.getMainHandItem(), player.getOffhandItem() }) {
+			if (stack.getItem() instanceof BlockItem item) {
+				BlockState state = item.getBlock().defaultBlockState();
+				int level = state.getLightEmission();
+				if (level > bestLevel) {
+					int c = of(state);
+					bestLevel = level;
+					best = level | (c & 0xFF) << 8 | (c >> 8 & 0xFF) << 16 | (c >> 16 & 0xFF) << 24;
+				}
+			}
+		}
+		return best;
 	}
 
 	static int of(BlockState state) {

@@ -9,6 +9,7 @@
     "DefaultPlayerSkinAccessor",
     "DefaultSteveMixin",
     "EntityCollideMixin",
+    "EntityRendererShadeMixin",
     "FramerateLimitTrackerMixin",
     "InputConstantsMixin",
     "IntegratedServerMixin",

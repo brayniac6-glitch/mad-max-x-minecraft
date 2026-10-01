@@ -87,8 +87,13 @@ namespace madcraft::proto
 		std::uint32_t teleportSeq;       // MC teleports its player to pos when this changes
 		std::uint32_t viewportW, viewportH;
 		float         gameHour;
+		// How lit Mad Max's world is where the player stands (0 dark .. 1 full daylight), from the
+		// frame around them (and any light they hold): Minecraft scales its sky light by it, so the
+		// first-person hand and held items darken in Mad Max's shadows.
+		float         shade;
+		std::uint32_t pad44;
 	};
-	static_assert(sizeof(MadState) == 0x40);
+	static_assert(sizeof(MadState) == 0x48);
 
 	// ---- MC -> MadMax state @0x200 (seqlock) ------------------------------------------------
 	enum McFlags : std::uint32_t
@@ -136,8 +141,13 @@ namespace madcraft::proto
 		// the eye, after its own zoom collision (Minecraft blocks and Mad Max's triangles).
 		std::uint32_t cameraMode;
 		float         cameraDistance;
+
+		// The brightest light the player holds (either hand; a torch, lantern, glowstone...): low byte
+		// Minecraft light level 0-15, upper three bytes RGB (r first), as in RenLight's colour.
+		std::uint32_t heldLight;
+		std::uint32_t padCC;
 	};
-	static_assert(sizeof(McState) == 0xC8);
+	static_assert(sizeof(McState) == 0xD0);
 	static_assert(sizeof(McState) <= 0x100);
 
 	// ---- overlay triple buffer @0x300 --------------------------------------------------------

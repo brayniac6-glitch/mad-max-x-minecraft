@@ -344,6 +344,9 @@ namespace madcraft
 			McVec smoothFeet{}, smoothEye{};
 			if (haveMc) {
 				Interpolate(mc, smoothFeet, smoothEye);
+				st.heldLight = mc.heldLight;
+			} else if (!mcAlive) {
+				st.heldLight = 0;
 			}
 			if (mcAlive != mcWasAlive) {
 				logger::info("Minecraft {}", mcAlive ? "connected" : "gone");
@@ -634,6 +637,7 @@ namespace madcraft
 			out.viewportW = static_cast<std::uint32_t>(st.viewportW.load());
 			out.viewportH = static_cast<std::uint32_t>(st.viewportH.load());
 			out.gameHour = 12.0f;  // TODO(hooks.tsv: TimeOfDay) until Mad Max's clock is found
+			out.shade = st.shade;
 			link.WriteGameState(out);
 
 			// Phase 0 ground: while Minecraft drives, the floor stays at the height Max stood on when

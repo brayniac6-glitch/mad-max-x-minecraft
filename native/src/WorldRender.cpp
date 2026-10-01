@@ -1,6 +1,7 @@
 #include "WorldRender.h"
 
 #include "Game.h"
+#include "SceneLight.h"
 
 #include <MinHook.h>
 #include <d3dcompiler.h>
@@ -47,10 +48,13 @@ cbuffer Frame : register(b0)
 	float4 sunColor;              // rgb
 	float4 ambient;               // rgb (the sky's fill light)
 	float4 fog;                   // x: start (m), y: end (m), z: max amount, w: on
+	float4 local;                 // x: scene mip, y: daylight brightness, z: darkest factor, w: on
+	float4 screenInv;             // xy: 1 / screen size
 };
 cbuffer Object : register(b1)
 {
-	float4 offset;                // camera-relative Mad Max position of the mesh's Minecraft origin
+	float4 offset;                // camera-relative Mad Max position of the mesh's Minecraft origin;
+	                              // w: 1 = the player (Minecraft already darkened it by MadState::shade)
 };
 Texture2D atlas : register(t0);
 Texture2D sceneColor : register(t1);  // Mad Max's frame (mipmapped): its average tints our light and haze
@@ -101,12 +105,12 @@ static const float3 kNormals[8] = {
 // SkyCraft's lighting (MIT, chasmlol), with Mad Max's sun: the sky's fill light (darkened where
 // Minecraft's sky light says a face is roofed over), plus the sun on faces turned towards it, through
 // a soft exposure curve into the game's range; Minecraft's block light (torches) still glows.
-float3 Lighting(float2 l, float3 n, bool hasNormal, float3 tint)
+float3 Lighting(float2 l, float3 n, bool hasNormal, float3 tint, float env)
 {
 	float sky = Curve(l.y);
 	float sun = hasNormal ? saturate(dot(n, sunDir.xyz)) : 0.35 + 0.4 * saturate(sunDir.y);
 	float3 lit = ambient.rgb * tint * lerp(0.3, 1.0, sky) + sunColor.rgb * tint * (sun * sky * sky);
-	lit = 1.0 - exp(-max(lit, 0.0) * light.x);
+	lit = (1.0 - exp(-max(lit, 0.0) * light.x)) * env;
 	float block = Curve(l.x);
 	return max(max(lit, light.y), block * float3(1.0, 0.85, 0.65));
 }
@@ -132,7 +136,14 @@ float4 PSMain(VSOut i) : SV_Target
 	float3 avg = light.w > 0.5 ? sceneColor.SampleLevel(smoothSampler, float2(0.5, 0.5), 14.0).rgb : 0.5;
 	float  avgL = max(dot(avg, float3(0.2126, 0.7152, 0.0722)), 0.02);
 	float3 tint = light.w > 0.5 ? lerp(1.0, avg / avgL, 0.35) : 1.0;
-	float3 lit = light.z > 0.5 ? Lighting(i.light, n, ni != 0, tint) : max(Curve(i.light.y), light.y);
+	// Mad Max's own light where this pixel is: its frame around it (blurred), against daylight. A
+	// block in a dark bunker or in the night goes dark; Minecraft's block light (torches) still shows.
+	float env = 1.0;
+	if (local.w > 0.5 && offset.w < 0.5 && light.w > 0.5) {
+		float3 around = sceneColor.SampleLevel(smoothSampler, i.pos.xy * screenInv.xy, local.x).rgb;
+		env = clamp(dot(around, float3(0.2126, 0.7152, 0.0722)) / local.y, local.z, 1.0);
+	}
+	float3 lit = light.z > 0.5 ? Lighting(i.light, n, ni != 0, tint, env) : max(Curve(i.light.y), light.y) * env;
 	float3 c = t.rgb * i.color.rgb * lit;
 	if (fog.w > 0.5) {
 		// Mad Max's dusty haze: towards the scene's own average colour with distance.
@@ -151,6 +162,8 @@ float4 PSMain(VSOut i) : SV_Target
 			float sunColor[4];
 			float ambient[4];
 			float fog[4];
+			float local[4];
+			float screenInv[4];
 		};
 
 		ID3D11SamplerState* smoothSampler = nullptr;
@@ -759,6 +772,7 @@ float4 PSMain(VSOut i) : SV_Target
 						break;
 					case proto::kRenClearAll:
 						ClearSections();
+						SceneLight::Clear();
 						ClearAvatar();
 						break;
 					case proto::kRenTexture:
@@ -773,7 +787,10 @@ float4 PSMain(VSOut i) : SV_Target
 					case proto::kRenAtlasRegion:
 						OnAtlasRegion(a_context, a_data, a_bytes);
 						break;
-					default:  // lights, solids, ragdoll: not yet on the Mad Max side
+					case proto::kRenLights:
+						SceneLight::OnLights(a_data, a_bytes);
+						break;
+					default:  // solids, ragdoll: not yet on the Mad Max side
 						break;
 					}
 				},
@@ -976,9 +993,14 @@ float4 PSMain(VSOut i) : SV_Target
 		const float fogStart = static_cast<float>(IniDouble("Render", "fFogStart", 60.0));
 		const float fogEnd = static_cast<float>(IniDouble("Render", "fFogEnd", 600.0));
 		const float fogMax = static_cast<float>(IniDouble("Render", "fFogMax", 0.6));
+		// Minecraft's blocks and mobs darken with Mad Max's light around them (bBlockShade): full light
+		// at fShadeDaylight frame brightness, never below fBlockShadeMin.
+		const bool  blockShade = IniBool("Render", "bBlockShade", true);
+		const float shadeDaylight = std::max(0.02f, static_cast<float>(IniDouble("Render", "fShadeDaylight", 0.3)));
+		const float shadeDarkest = static_cast<float>(IniDouble("Render", "fBlockShadeMin", 0.08));
 
 		// A Minecraft point (blocks) -> camera-relative Mad Max position, in double precision.
-		void SetObjectOffset(ID3D11DeviceContext* a_context, const double a_mc[3])
+		void SetObjectOffset(ID3D11DeviceContext* a_context, const double a_mc[3], bool a_player = false)
 		{
 			const Vec3 world = MadMax::FromMc(a_mc[0], a_mc[1], a_mc[2]);
 			D3D11_MAPPED_SUBRESOURCE mapped{};
@@ -987,17 +1009,17 @@ float4 PSMain(VSOut i) : SV_Target
 				o->offset[0] = float(double(world.x) - camPos.x);
 				o->offset[1] = float(double(world.y) - camPos.y);
 				o->offset[2] = float(double(world.z) - camPos.z);
-				o->offset[3] = 0.0f;
+				o->offset[3] = a_player ? 1.0f : 0.0f;
 				a_context->Unmap(objectCb, 0);
 			}
 		}
 
-		void DrawMesh(ID3D11DeviceContext* a_context, const Mesh& a_mesh, const double a_mcOrigin[3], bool a_blended)
+		void DrawMesh(ID3D11DeviceContext* a_context, const Mesh& a_mesh, const double a_mcOrigin[3], bool a_blended, bool a_player = false)
 		{
 			if (a_mesh.batches.empty() || !a_mesh.vb) {
 				return;
 			}
-			SetObjectOffset(a_context, a_mcOrigin);
+			SetObjectOffset(a_context, a_mcOrigin, a_player);
 			const UINT stride = sizeof(Vertex), zero = 0;
 			a_context->IASetVertexBuffers(0, 1, &a_mesh.vb, &stride, &zero);
 			for (const auto& b : a_mesh.batches) {
@@ -1023,7 +1045,7 @@ float4 PSMain(VSOut i) : SV_Target
 			const auto& st = State();
 			if (st.bodyValid) {
 				const double feet[3] = { st.bodyX, st.bodyY, st.bodyZ };
-				DrawMesh(a_context, avatar, feet, a_blended);
+				DrawMesh(a_context, avatar, feet, a_blended, true);
 			}
 			DrawMesh(a_context, scene, scene.origin, a_blended);
 		}
@@ -1188,6 +1210,18 @@ float4 PSMain(VSOut i) : SV_Target
 				return;
 			}
 			if (haveScene) {
+				SceneLight::MeasureShade(device, a_context, sceneTex, sceneW, sceneH, sceneFormat);
+				// The blurred frame around each pixel (a mip about 1/32 of the screen) lights our blocks.
+				float mip = 0.0f;
+				while ((sceneH >> (int(mip) + 1)) >= 34) {
+					mip += 1.0f;
+				}
+				fc.local[0] = mip;
+				fc.local[1] = shadeDaylight;
+				fc.local[2] = shadeDarkest;
+				fc.local[3] = blockShade ? 1.0f : 0.0f;
+				fc.screenInv[0] = 1.0f / float(bbDesc.Width);
+				fc.screenInv[1] = 1.0f / float(bbDesc.Height);
 				fc.light[3] = 1.0f;
 				if (SUCCEEDED(a_context->Map(frameCb, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped))) {
 					std::memcpy(mapped.pData, &fc, sizeof(fc));
@@ -1279,6 +1313,21 @@ float4 PSMain(VSOut i) : SV_Target
 
 			StateBackup saved;
 			saved.Save(a_context);
+
+			// Minecraft's torches, lanterns and lava light Mad Max's world (before our own geometry,
+			// which Minecraft has lit already).
+			{
+				SceneLight::FrameInfo fi{};
+				fi.depth = dsv;
+				fi.clearDepth = sceneDepth.clear;
+				fi.flipDepth = fc.axes[1] > 0.5f;
+				std::memcpy(fi.viewProj, fc.viewProj, sizeof(fi.viewProj));
+				fi.camPos = camPos;
+				fi.scene = haveScene ? sceneSrv : nullptr;
+				fi.width = bbDesc.Width;
+				fi.height = bbDesc.Height;
+				SceneLight::Apply(device, a_context, rtv, fi);
+			}
 			D3D11_VIEWPORT view{ 0, 0, float(bbDesc.Width), float(bbDesc.Height), 0, 1 };
 			a_context->RSSetViewports(1, &view);
 			a_context->RSSetState(raster);

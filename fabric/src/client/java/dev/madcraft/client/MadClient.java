@@ -55,6 +55,21 @@ public final class MadClient {
 	}
 
 	/**
+	 * The sky light (0-15) Mad Max's light around the player allows: lower in its shadows,
+	 * interiors and nights (MadState.shade), 15 when not linked.
+	 */
+	public static int playerSkyLight() {
+		if (!linked) {
+			return 15;
+		}
+		float shade = sky.shade;
+		if (!(shade >= 0.0F)) {
+			return 15;
+		}
+		return Math.round(Math.min(shade, 1.0F) * 15.0F);
+	}
+
+	/**
 	 * True once MadMax has connected in this session. From then on Minecraft never touches the
 	 * real mouse or keyboard again (even if MadMax closes), since its window is hidden.
 	 */
@@ -399,6 +414,7 @@ public final class MadClient {
 			// Minecraft's F5 camera: MadMax puts its camera where Minecraft's would be.
 			mc.cameraMode = minecraft.options.getCameraType().ordinal();
 			mc.cameraDistance = camera.isDetached() ? (float) camera.position().distanceTo(player.getEyePosition(partial)) : 0.0F;
+			mc.heldLight = dev.madcraft.client.render.BlockLightColors.held(player);
 			// Walk bob, exactly what GameRenderer.bobView() uses this frame.
 			var entityState = minecraft.gameRenderer.gameRenderState().levelRenderState.cameraRenderState.entityRenderState;
 			boolean bob = minecraft.options.bobView().get() && entityState.isPlayer;

@@ -189,6 +189,8 @@ public final class MadLink {
 		public int teleportSeq;
 		public int viewportW, viewportH;
 		public float gameHour;
+		/** How lit Mad Max's world is where the player stands, 0..1 (1 = daylight). */
+		public float shade = 1.0F;
 
 		public boolean inGame() {
 			return (this.flags & SKY_IN_GAME) != 0;
@@ -270,6 +272,7 @@ public final class MadLink {
 			out.viewportW = s.get(JAVA_INT, b + SS_VIEWPORT_W);
 			out.viewportH = s.get(JAVA_INT, b + SS_VIEWPORT_H);
 			out.gameHour = s.get(JAVA_FLOAT, b + SS_GAME_HOUR);
+			out.shade = s.get(JAVA_FLOAT, b + SS_SHADE);
 			VarHandle.loadLoadFence();
 			int seq2 = (int) INT.getAcquire(s, b + SS_SEQ);
 			if (seq1 == seq2) {
@@ -310,6 +313,8 @@ public final class MadLink {
 		public float tickMs = 50.0F;
 		public int cameraMode;
 		public float cameraDistance;
+		/** Brightest held light: low byte level 0-15, upper bytes RGB (as RenLight colour). */
+		public int heldLight;
 	}
 
 	public static void writeMcState(McState st) {
@@ -354,6 +359,7 @@ public final class MadLink {
 		s.set(JAVA_FLOAT, b + MS_TICK_MS, st.tickMs);
 		s.set(JAVA_INT, b + MS_CAMERA_MODE, st.cameraMode);
 		s.set(JAVA_FLOAT, b + MS_CAMERA_DISTANCE, st.cameraDistance);
+		s.set(JAVA_INT, b + MS_HELD_LIGHT, st.heldLight);
 		INT.setRelease(s, b + MS_SEQ, seq + 2);
 	}
 

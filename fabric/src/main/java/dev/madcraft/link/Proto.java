@@ -143,6 +143,7 @@ public final class Proto {
 	public static final long SS_VIEWPORT_W = 0x34;
 	public static final long SS_VIEWPORT_H = 0x38;
 	public static final long SS_GAME_HOUR = 0x3C;
+	public static final long SS_SHADE = 0x40;
 
 	public static final int SKY_IN_GAME = 1;
 	public static final int SKY_MENU_OPEN = 1 << 1;
@@ -179,6 +180,7 @@ public final class Proto {
 	public static final long MS_TICK_MS = 0xB8;
 	public static final long MS_CAMERA_MODE = 0xC0;
 	public static final long MS_CAMERA_DISTANCE = 0xC4;
+	public static final long MS_HELD_LIGHT = 0xC8;
 
 	public static final int MC_IN_WORLD = 1;
 	public static final int MC_SCREEN_OPEN = 1 << 1;
