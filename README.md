@@ -36,7 +36,27 @@ Minecraft mods folder/
 
 ## Install
 
-### 1. Minecraft (Fabric 26.3)
+### The easy way: let an AI do it
+
+If you use an AI assistant that can work on your PC (for example **Claude Code** or the **Claude
+desktop app**, or any AI agent that can run commands and download files), give it this
+repository's link and it can read this README and install MadCraft for you. Copy and paste:
+
+> Install MadCraft for me from https://github.com/brayniac6-glitch/mad-max-x-minecraft. Read the
+> README, download the latest release zip, install Fabric Loader for Minecraft 26.3, put Fabric API
+> and the MadCraft jar in my `.minecraft\mods` folder, and copy the Mad Max files into my Mad Max
+> folder (find where `MadMax.exe` is). Tell me what you did and anything I still need to do.
+
+Things to know:
+- The AI still needs **your own copies** of both games installed. It can't buy them, sign you in,
+  or get around the ownership checks. You start Minecraft and sign in yourself.
+- Only use this repository's link. Other copies of MadCraft could be modified.
+- A good assistant tells you which files it copied and where, so you can undo it (see *uninstall*
+  below).
+
+### Or do it yourself
+
+#### 1. Minecraft (Fabric 26.3)
 
 1. Open the official Minecraft Launcher once and run **26.3** so the version is downloaded.
 2. Download and run the **[Fabric Installer](https://fabricmc.net/use/installer/)**. Choose
@@ -49,7 +69,7 @@ Minecraft mods folder/
      [CurseForge](https://www.curseforge.com/minecraft/mc-mods/fabric-api))
    - **`madcraft-0.1.0.jar`** from the zip's `Minecraft mods folder`
 
-### 2. Mad Max (GOG)
+#### 2. Mad Max (GOG)
 
 1. Find your Mad Max folder (the one with `MadMax.exe`). For GOG Galaxy it's usually
    `C:\Program Files\GOG Galaxy\Games\Mad Max` (Galaxy: Mad Max → *Manage installation* → *Show folder*).
@@ -137,5 +157,7 @@ Bros. Games or Avalanche Studios. *Minecraft* is a trademark of Mojang/Microsoft
 Warner Bros. No game code or assets are included. You need your own legally bought copies of both
 games. Minecraft mods follow the [Minecraft Usage Guidelines](https://www.minecraft.net/usage-guidelines).
 
-MadCraft's own code is MIT-licensed (see `LICENSE`). It's derived from SkyCraft by chasmlol (MIT),
-see `THIRD-PARTY-NOTICES.md`.
+MadCraft is released under the **MIT License**, the same license as SkyCraft, which it's derived
+from. `LICENSE` carries SkyCraft's license text unchanged, with chasmlol's copyright notice kept
+alongside this project's, as the MIT License requires. Other components (MinHook in the Mad Max
+plugin) and their licenses are listed in `THIRD-PARTY-NOTICES.md`.
