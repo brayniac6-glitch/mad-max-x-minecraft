@@ -41,6 +41,8 @@ namespace madcraft
 
 		constexpr std::uint32_t kDikO = 0x18;   // Minecraft pause / options menu (Esc stays Mad Max's)
 		constexpr std::uint32_t kDikF8 = 0x42;  // toggle: Minecraft controls <-> Mad Max controls
+		constexpr std::uint32_t kDikF5 = 0x3F;  // in a car: first person <-> Mad Max's chase camera
+		bool                    f5Down = false;
 
 		// Keys Mad Max keeps while Minecraft drives (MadCraft.ini [Input] sGameKeys, DIK hex codes).
 		std::array<bool, 256> gameKeys = [] {
@@ -132,6 +134,18 @@ namespace madcraft
 				f8Down = a_down;
 				return;
 			}
+			// F5 in a car (Minecraft mode): first person in the seat <-> Mad Max's chase camera.
+			if (a_dik == kDikF5 && st.driving && !st.madMaxControls) {
+				if (a_down && !f5Down) {
+					st.carFirstPerson = !st.carFirstPerson;
+				}
+				f5Down = a_down;
+				return;
+			}
+			if (carKey && a_dik == carKey && a_down && !carDown) {
+				logger::info("vehicle: car key pressed (controls {}, Minecraft has the player {}, in a car {}, screen open {}, menu {})",
+					st.madMaxControls ? "Mad Max" : "Minecraft", st.minecraftOwnsPlayer.load(), st.driving.load(), st.mcScreenOpen.load(), st.gameMenuOpen.load());
+			}
 			if (carKey && a_dik == carKey && !st.madMaxControls) {
 				if (a_down && !carDown && !st.mcScreenOpen && !st.gameMenuOpen && (st.minecraftOwnsPlayer || st.driving)) {
 					const auto now = ::GetTickCount64();
@@ -174,6 +188,13 @@ namespace madcraft
 		{
 			auto& st = State();
 			auto& link = Link::Get();
+			if (st.carCam) {
+				// First person in a car: the mouse looks around the cab (buttons stay Mad Max's).
+				lookDx = lookDx + float(a_dx);
+				lookDy = lookDy + float(a_dy);
+				std::memcpy(lastButtons.data(), a_buttons, std::min(a_count, 8));
+				return;
+			}
 			if (!RouteToMinecraft()) {
 				std::memcpy(lastButtons.data(), a_buttons, std::min(a_count, 8));
 				return;
@@ -254,6 +275,9 @@ namespace madcraft
 					if (carKey && carKey != madMaxCarKey) {
 						keys[carKey] = 0;
 					}
+					if (State().driving) {
+						keys[kDikF5] = 0;
+					}
 					if (Injecting()) {
 						keys[madMaxCarKey] = 0x80;
 					}
@@ -263,6 +287,10 @@ namespace madcraft
 				const int nButtons = a_size >= sizeof(DIMOUSESTATE2) ? 8 : 4;
 				if (!buffered) {
 					OnMouse(m->lX, m->lY, m->lZ, m->rgbButtons, nButtons, true);
+				}
+				if (State().carCam) {
+					m->lX = 0;  // the cab look has it, not Mad Max's chase camera
+					m->lY = 0;
 				}
 				if (RouteToMinecraft()) {
 					// Mad Max's camera sets the look: it keeps the mouse movement, Minecraft keeps
@@ -307,10 +335,16 @@ namespace madcraft
 					if (carKey && e.dwOfs == carKey && carKey != madMaxCarKey && !State().madMaxControls) {
 						keep = false;
 					}
+					if (e.dwOfs == kDikF5 && State().driving && !State().madMaxControls) {
+						keep = false;
+					}
 				} else {
 					const LONG v = static_cast<LONG>(e.dwData);
 					if ((e.dwOfs == DIMOFS_X || e.dwOfs == DIMOFS_Y) && State().cameraLook && !State().mcScreenOpen) {
 						keep = true;  // Mad Max's camera sets the look (see FilterState)
+					}
+					if ((e.dwOfs == DIMOFS_X || e.dwOfs == DIMOFS_Y) && State().carCam) {
+						keep = false;  // the cab look (see FilterState)
 					}
 					if (e.dwOfs == DIMOFS_X) {
 						OnMouse(v, 0, 0, lastButtons.data(), 0, false);

@@ -162,6 +162,10 @@ namespace madcraft
 		const bool hideMaxModel = IniBool("Camera", "bHideMax", true);
 		// Steve in a car's seat: how far above Max's (seated) position his feet go, in blocks.
 		const float seatOffset = static_cast<float>(IniDouble("Vehicle", "fSeatOffsetY", 0.0));
+		// First person in a car: the eyes above Max's seated position and forward of it (metres).
+		const float carEyeY = static_cast<float>(IniDouble("Vehicle", "fFirstPersonEyeY", 0.9));
+		const float carEyeForward = static_cast<float>(IniDouble("Vehicle", "fFirstPersonEyeForward", 0.0));
+		float       carLookYaw = 0.0f, carLookPitch = 0.0f;  // the mouse in the cab, relative to the car
 		const bool useGameCamera = !firstPerson && IniBool("Camera", "bUseGameCamera", true);
 		float      cameraHanded = 0.0f;  // +1/-1: Mad Max's camera rows satisfy row0 = s * (row1 x row2)
 		int        camAxis = -1;
@@ -383,13 +387,21 @@ namespace madcraft
 			}
 			st.driving = driving;
 			// In the car, Minecraft's player faces where the car does (Steve sits facing forward).
+			float carYaw = st.yaw;
 			if (driving) {
 				float heading = 0.0f;
 				if (MadMax::GetPlayerHeading(heading)) {
-					st.yaw = MadMax::HeadingToMcYaw(heading);
+					carYaw = MadMax::HeadingToMcYaw(heading);
+					st.yaw = carYaw;
 					st.pitch = 0.0f;
 				}
 			}
+			const bool carCam = driving && firstPerson && st.carFirstPerson && !st.madMaxControls && !st.gameMenuOpen;
+			if (carCam != st.carCam) {
+				logger::info("vehicle: {} camera", carCam ? "first-person" : "Mad Max's");
+				carLookYaw = carLookPitch = 0.0f;
+			}
+			st.carCam = carCam;
 			const auto feetMc = MadMax::ToMc(feet);
 			st.bodyValid = inGame;
 			st.bodyX = feetMc.x, st.bodyY = feetMc.y, st.bodyZ = feetMc.z;
@@ -491,6 +503,15 @@ namespace madcraft
 				st.yaw = std::fmod(st.yaw + dx * factor, 360.0f);
 				st.pitch = std::clamp(st.pitch + dy * factor, -90.0f, 90.0f);
 			}
+			if (carCam) {
+				// Looking around the cab, relative to where the car points.
+				const float s = st.sensitivity * 0.6f + 0.2f;
+				const float factor = s * s * s * 8.0f * 0.15f;
+				carLookYaw = std::clamp(carLookYaw + dx * factor, -160.0f, 160.0f);
+				carLookPitch = std::clamp(carLookPitch + dy * factor, -80.0f, 80.0f);
+				st.yaw = carYaw + carLookYaw;
+				st.pitch = carLookPitch;
+			}
 
 			const bool arriving = haveMc && st.mcInWorld && inGame && mc.teleportAck != teleportSeq && !gameHasPlayer;
 			const bool puppet = haveMc && st.mcInWorld && inGame && mc.teleportAck == teleportSeq && !gameHasPlayer;
@@ -503,7 +524,7 @@ namespace madcraft
 
 			// Minecraft's eyes as Mad Max's camera while Minecraft drives: first person, or its F5
 			// views (behind; in front looking back), pulled in by Minecraft's own zoom collision.
-			if (firstPerson && puppet && !st.gameMenuOpen) {
+			if (firstPerson && (puppet || carCam) && !st.gameMenuOpen) {
 				const auto rc = MadMax::RenderCameraObject();
 				if (rc && cameraHanded == 0.0f) {
 					float gm[16];
@@ -514,7 +535,7 @@ namespace madcraft
 					}
 				}
 				if (rc && cameraHanded != 0.0f) {
-					const bool  front = mc.cameraMode == 2;
+					const bool  front = !carCam && mc.cameraMode == 2;
 					const float yaw = (front ? st.yaw + 180.0f : st.yaw) * 0.017453292f;
 					const float pitch = (front ? -st.pitch : st.pitch) * 0.017453292f;
 					// Minecraft's look direction (x, y, z), into Mad Max's axes.
@@ -530,7 +551,13 @@ namespace madcraft
 					const float r0[3] = { cameraHanded * (r1[1] * r2[2] - r1[2] * r2[1]), cameraHanded * (r1[2] * r2[0] - r1[0] * r2[2]),
 						cameraHanded * (r1[0] * r2[1] - r1[1] * r2[0]) };
 					Vec3 eye = MadMax::FromMc(smoothEye.x, smoothEye.y, smoothEye.z);
-					if (mc.cameraMode != 0 && mc.cameraDistance > 0.0f) {
+					if (carCam) {
+						// Steve's eyes in the driver's seat (the car's forward, level).
+						const float cy = carYaw * 0.017453292f;
+						const Vec3  fw = MadMax::FromMc(-std::sin(cy), 0.0, std::cos(cy));
+						const Vec3  base = MadMax::FromMc(0.0, 0.0, 0.0);
+						eye = { feet.x + (fw.x - base.x) * carEyeForward, feet.y + carEyeY, feet.z + (fw.z - base.z) * carEyeForward };
+					} else if (mc.cameraMode != 0 && mc.cameraDistance > 0.0f) {
 						const float d = mc.cameraDistance * static_cast<float>(proto::kUnitsPerBlock);
 						eye = { eye.x - f[0] * d, eye.y - f[1] * d, eye.z - f[2] * d };
 					}
@@ -553,6 +580,9 @@ namespace madcraft
 			st.bodyValid = inGame && (!firstPerson || !puppet || mc.cameraMode != 0);
 			if (driving) {
 				st.bodyY += seatOffset;
+			}
+			if (carCam) {
+				st.bodyValid = false;  // the camera is in his head
 			}
 			st.mcGuiScale = haveMc ? static_cast<int>(mc.guiScale) : 0;
 
