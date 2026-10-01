@@ -12,6 +12,8 @@ namespace madcraft::Collision
 	namespace
 	{
 		constexpr int   kRegion = 8;             // must match MadCollision.REGION_SIZE
+		constexpr int   kSub = 2;                // grid corners per block (2: every half block; catches small rocks)
+		constexpr int   kCells = kRegion * kSub;  // grid cells across a region
 		constexpr int   kRadius = 3;             // column-regions around the player (7 x 7 = 56 x 56 blocks)
 		constexpr float kAbove = 4.0f;           // rays start this far above the player's feet...
 		constexpr float kBelow = 40.0f;          // ...and reach this far below
@@ -21,7 +23,7 @@ namespace madcraft::Collision
 
 		struct Column
 		{
-			float heights[kRegion + 1][kRegion + 1];  // MC y at each corner, kNoGround = miss
+			float heights[kCells + 1][kCells + 1];  // MC y at each grid corner (every 1/kSub block), kNoGround = miss
 			float         scannedFrom{ 0 };           // MC y the rays started at
 			int           next{ 0 };                  // corners done so far (scan in progress)
 			bool          complete{ false };
@@ -68,7 +70,20 @@ namespace madcraft::Collision
 				if (first == kNoGround) {
 					first = y;
 				}
-				start = y - 0.15f;  // look under that surface
+				// Above the feet: a roof (open space under it) or solid rock? Look up from the feet's
+				// height. Under a roof that ray meets its underside; inside a rock it starts inside the
+				// shape, which Havok ignores, so it meets nothing - and the rock's top stays the ground
+				// (a wall Minecraft can't step up), instead of the ray below finding the ground under it.
+				{
+					const Vec3 upFrom = MadMax::FromMc(a_x, feetY + 0.5f, a_z);
+					const Vec3 upTo = MadMax::FromMc(a_x, y + 0.5f, a_z);
+					Vec3       under{};
+					++raysCast;
+					if (!MadMax::RaycastStatic(upFrom, upTo, under)) {
+						return first;  // solid from the feet up to its top: rock, cliff, wall
+					}
+				}
+				start = y - 0.15f;  // a roof: look for the floor under it
 			}
 			return first;
 		}
@@ -79,10 +94,11 @@ namespace madcraft::Collision
 			const int   x0 = a_rx * kRegion, y0 = a_ry * kRegion, z0 = a_rz * kRegion;
 			const float yLo = float(y0) - 1.0f, yHi = float(y0 + kRegion) + 1.0f;
 
-			// Triangles: two per block, kept if they reach into this region's height (with a margin).
+			// Triangles: two per grid cell, kept if they reach into this region's height (with a margin).
 			std::vector<std::uint8_t> tris(sizeof(proto::ColRegion));
-			for (int dz = 0; dz < kRegion; ++dz) {
-				for (int dx = 0; dx < kRegion; ++dx) {
+			constexpr float           kStep = 1.0f / kSub;
+			for (int dz = 0; dz < kCells; ++dz) {
+				for (int dx = 0; dx < kCells; ++dx) {
 					const float h00 = a_col.heights[dz][dx], h10 = a_col.heights[dz][dx + 1];
 					const float h01 = a_col.heights[dz + 1][dx], h11 = a_col.heights[dz + 1][dx + 1];
 					if (h00 == kNoGround || h10 == kNoGround || h01 == kNoGround || h11 == kNoGround) {
@@ -92,7 +108,7 @@ namespace madcraft::Collision
 					if (hi < yLo || lo > yHi) {
 						continue;
 					}
-					const float ax = float(x0 + dx), bx = ax + 1.0f, az = float(z0 + dz), bz = az + 1.0f;
+					const float ax = float(x0) + dx * kStep, bx = ax + kStep, az = float(z0) + dz * kStep, bz = az + kStep;
 					// Counter-clockwise seen from above (normals up), as in MadTri.
 					const proto::ColTri t1{ { ax, h00, az, ax, h01, bz, bx, h11, bz }, 0 };
 					const proto::ColTri t2{ { ax, h00, az, bx, h11, bz, bx, h10, az }, 0 };
@@ -112,12 +128,23 @@ namespace madcraft::Collision
 			std::uint32_t             count = 0;
 			for (int dz = 0; dz < kRegion; ++dz) {
 				for (int dx = 0; dx < kRegion; ++dx) {
-					const float h00 = a_col.heights[dz][dx], h10 = a_col.heights[dz][dx + 1];
-					const float h01 = a_col.heights[dz + 1][dx], h11 = a_col.heights[dz + 1][dx + 1];
-					if (h00 == kNoGround || h10 == kNoGround || h01 == kNoGround || h11 == kNoGround) {
+					// The block's lowest grid corner (never above the triangles over it).
+					float lowest = 1e30f;
+					bool  missing = false;
+					for (int sz = 0; sz <= kSub && !missing; ++sz) {
+						for (int sx = 0; sx <= kSub; ++sx) {
+							const float h = a_col.heights[dz * kSub + sz][dx * kSub + sx];
+							if (h == kNoGround) {
+								missing = true;
+								break;
+							}
+							lowest = std::min(lowest, h);
+						}
+					}
+					if (missing) {
 						continue;
 					}
-					const int topEighths = static_cast<int>(std::floor(std::min({ h00, h10, h01, h11 }) * 8.0f));
+					const int topEighths = static_cast<int>(std::floor(lowest * 8.0f));
 					for (int by = y0; by < y0 + kRegion; ++by) {
 						const int layers = std::clamp(topEighths - by * 8, 0, 8);
 						if (layers == 0) {
@@ -173,8 +200,9 @@ namespace madcraft::Collision
 		if (it == columns.end() || !it->second.complete) {
 			return kNoGround;
 		}
-		const int   cx = std::clamp(static_cast<int>(std::floor(a_x - rx * kRegion)), 0, kRegion - 1);
-		const int   cz = std::clamp(static_cast<int>(std::floor(a_z - rz * kRegion)), 0, kRegion - 1);
+		const double gx = (a_x - rx * kRegion) * kSub, gz = (a_z - rz * kRegion) * kSub;
+		const int    cx = std::clamp(static_cast<int>(std::floor(gx)), 0, kCells - 1);
+		const int    cz = std::clamp(static_cast<int>(std::floor(gz)), 0, kCells - 1);
 		// The surface at this exact point (bilinear across the block's corners), like the triangles
 		// Minecraft stands on: on a slope the highest corner can be blocks above the player.
 		const auto& h = it->second.heights;
@@ -182,7 +210,7 @@ namespace madcraft::Collision
 		if (c00 == kNoGround || c10 == kNoGround || c01 == kNoGround || c11 == kNoGround) {
 			return kNoGround;
 		}
-		const float fx = static_cast<float>(a_x - std::floor(a_x)), fz = static_cast<float>(a_z - std::floor(a_z));
+		const float fx = static_cast<float>(gx - cx), fz = static_cast<float>(gz - cz);
 		return (c00 * (1 - fx) + c10 * fx) * (1 - fz) + (c01 * (1 - fx) + c11 * fx) * fz;
 	}
 
@@ -271,10 +299,10 @@ namespace madcraft::Collision
 						col.misses = 0;
 						col.scannedFrom = fromY;
 					}
-					constexpr int kCorners = (kRegion + 1) * (kRegion + 1);
+					constexpr int kCorners = (kCells + 1) * (kCells + 1);
 					while (col.next < kCorners) {
-						const int cz = col.next / (kRegion + 1), cx = col.next % (kRegion + 1);
-						col.heights[cz][cx] = ProbeCorner(double(rx * kRegion + cx), double(rz * kRegion + cz), col.scannedFrom);
+						const int cz = col.next / (kCells + 1), cx = col.next % (kCells + 1);
+						col.heights[cz][cx] = ProbeCorner(rx * kRegion + double(cx) / kSub, rz * kRegion + double(cz) / kSub, col.scannedFrom);
 						col.misses += col.heights[cz][cx] == kNoGround ? 1 : 0;
 						++col.next;
 						if (elapsedMs() > kBudgetMs) {
