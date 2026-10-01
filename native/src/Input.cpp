@@ -185,6 +185,16 @@ namespace madcraft
 					st.madMaxControls ? "Mad Max" : "Minecraft", st.minecraftOwnsPlayer.load(), st.driving.load(), st.mcScreenOpen.load(), st.gameMenuOpen.load());
 			}
 			if (carKey && a_dik == carKey && !st.madMaxControls) {
+				if (a_down && !carDown && !st.mcScreenOpen && !st.gameMenuOpen && st.minecraftOwnsPlayer && !st.driving) {
+					// On foot: Mad Max only lets Max into a car under its own control, so it gets the
+					// controls (and this very press) until he's in, then Minecraft mode comes back.
+					st.carHandoffUntilMs = ::GetTickCount64() + 4000;
+					st.madMaxControls = true;
+					Input::ReleaseAll();
+					carDown = a_down;
+					logger::info("vehicle: car key -> Mad Max takes Max to get in (Minecraft mode again once in the car)");
+					return;
+				}
 				if (a_down && !carDown && !st.mcScreenOpen && !st.gameMenuOpen && (st.minecraftOwnsPlayer || st.driving)) {
 					const auto now = ::GetTickCount64();
 					injectUntilMs = now + carHoldMs;
@@ -376,6 +386,9 @@ namespace madcraft
 					keep = keep || (gameKeys[e.dwOfs & 0xFF] && !State().mcScreenOpen);
 					if (carKey && e.dwOfs == carKey && carKey != madMaxCarKey && !State().madMaxControls) {
 						keep = false;
+					}
+					if (carKey && e.dwOfs == carKey && carKey == madMaxCarKey && State().carHandoffUntilMs != 0) {
+						keep = true;  // the press that started the hand-off (routing was decided before it)
 					}
 					if (e.dwOfs == kDikF5 && State().driving && !State().madMaxControls) {
 						keep = false;

@@ -50,6 +50,9 @@ namespace madcraft
 		// and until when Max is left to Mad Max after the car key (getting in plays its own animation).
 		std::atomic<bool>          driving{ false };
 		std::atomic<std::uint64_t> interactUntilMs{ 0 };
+		// The car key on foot in Minecraft mode hands Max to Mad Max until then (it only lets him get
+		// in a car under its own control); back to Minecraft mode once in the car, or at the deadline.
+		std::atomic<std::uint64_t> carHandoffUntilMs{ 0 };
 		// Driving camera in Minecraft mode (F5 in a car): Steve's eyes in the seat, or Mad Max's
 		// own chase camera. carCam: the first-person one is on now (the mouse looks around the cab).
 		std::atomic<bool>          carFirstPerson{ false };

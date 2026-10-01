@@ -396,6 +396,15 @@ namespace madcraft
 					st.pitch = 0.0f;
 				}
 			}
+			// The car key's hand-off to Mad Max: over once Max is in the car (or nothing happened).
+			if (const auto handoff = st.carHandoffUntilMs.load(); handoff != 0) {
+				if (driving || ::GetTickCount64() >= handoff) {
+					st.carHandoffUntilMs = 0;
+					st.madMaxControls = false;
+					Input::ReleaseAll();
+					logger::info("vehicle: {}; controls: Minecraft", driving ? "in the car" : "no car got in");
+				}
+			}
 			const bool carCam = driving && firstPerson && st.carFirstPerson && !st.madMaxControls && !st.gameMenuOpen;
 			if (carCam != st.carCam) {
 				logger::info("vehicle: {} camera", carCam ? "first-person" : "Mad Max's");
@@ -404,7 +413,7 @@ namespace madcraft
 			}
 			if (!carEyesLoaded) {
 				carEyesLoaded = true;
-				st.carEyeY = static_cast<float>(IniDouble("Vehicle", "fFirstPersonEyeY", 1.4));
+				st.carEyeY = static_cast<float>(IniDouble("Vehicle", "fFirstPersonEyeY", 1.0));
 				st.carEyeForward = static_cast<float>(IniDouble("Vehicle", "fFirstPersonEyeForward", 0.4));
 			}
 			st.carCam = carCam;
@@ -540,8 +549,10 @@ namespace madcraft
 						logger::info("camera driver: Mad Max's camera rows are {}-handed; Minecraft's eyes take over", cameraHanded > 0 ? "right" : "left");
 					}
 				}
-				if (rc && cameraHanded != 0.0f) {
-					const bool  front = !carCam && mc.cameraMode == 2;
+				if (rc && cameraHanded != 0.0f && carCam) {
+					CameraDriver::SetAttached(rc, carLookYaw, carLookPitch, st.carEyeY, st.carEyeForward, cameraHanded);
+				} else if (rc && cameraHanded != 0.0f) {
+					const bool  front = mc.cameraMode == 2;
 					const float yaw = (front ? st.yaw + 180.0f : st.yaw) * 0.017453292f;
 					const float pitch = (front ? -st.pitch : st.pitch) * 0.017453292f;
 					// Minecraft's look direction (x, y, z), into Mad Max's axes.
@@ -557,14 +568,7 @@ namespace madcraft
 					const float r0[3] = { cameraHanded * (r1[1] * r2[2] - r1[2] * r2[1]), cameraHanded * (r1[2] * r2[0] - r1[0] * r2[2]),
 						cameraHanded * (r1[0] * r2[1] - r1[1] * r2[0]) };
 					Vec3 eye = MadMax::FromMc(smoothEye.x, smoothEye.y, smoothEye.z);
-					if (carCam) {
-						// Steve's eyes in the driver's seat (the car's forward, level).
-						const float cy = carYaw * 0.017453292f;
-						const Vec3  fw = MadMax::FromMc(-std::sin(cy), 0.0, std::cos(cy));
-						const Vec3  base = MadMax::FromMc(0.0, 0.0, 0.0);
-						const float ahead = st.carEyeForward;
-						eye = { feet.x + (fw.x - base.x) * ahead, feet.y + st.carEyeY, feet.z + (fw.z - base.z) * ahead };
-					} else if (mc.cameraMode != 0 && mc.cameraDistance > 0.0f) {
+					if (mc.cameraMode != 0 && mc.cameraDistance > 0.0f) {
 						const float d = mc.cameraDistance * static_cast<float>(proto::kUnitsPerBlock);
 						eye = { eye.x - f[0] * d, eye.y - f[1] * d, eye.z - f[2] * d };
 					}
@@ -577,7 +581,8 @@ namespace madcraft
 			// Max's own model out of the picture while Minecraft drives (Steve is there instead).
 			// Also in a car in Minecraft mode, and while Mad Max plays getting in (Steve is in the seat).
 			const bool interacting = ::GetTickCount64() < st.interactUntilMs;
-			HideMax::Update((puppet || ((driving || interacting) && !st.madMaxControls)) && hideMaxModel, feet);
+			const bool handingOff = st.carHandoffUntilMs != 0;
+			HideMax::Update((puppet || ((driving || interacting) && !st.madMaxControls) || handingOff) && hideMaxModel, feet);
 			// Steve's body where Minecraft's player is this frame (smoothed), not where Max got moved to a
 			// frame later on the game thread: at elytra speed that lag made Steve jump and trail the camera.
 			if (puppet) {
