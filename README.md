@@ -22,14 +22,14 @@ real copies:
 
 ## Download
 
-Get **`MadCraft-0.1.0.zip`** from this repository's **[Releases](../../releases)** page. Inside:
+Get **`MadCraft-0.2.0.zip`** from this repository's **[Releases](../../releases)** page. Inside:
 
 ```
 Mad Max folder/
     dinput8.dll              <- the Mad Max plugin
     madcraft/MadCraft.ini    <- settings
 Minecraft mods folder/
-    madcraft-0.1.0.jar       <- the Minecraft mod
+    madcraft-0.2.0.jar       <- the Minecraft mod
 ```
 
 ## Install
@@ -65,7 +65,7 @@ Things to know:
 4. Put these in it:
    - **Fabric API** for 26.3 ([Modrinth](https://modrinth.com/mod/fabric-api/versions) or
      [CurseForge](https://www.curseforge.com/minecraft/mc-mods/fabric-api))
-   - **`madcraft-0.1.0.jar`** from the zip's `Minecraft mods folder`
+   - **`madcraft-0.2.0.jar`** from the zip's `Minecraft mods folder`
 
 #### 2. Mad Max (GOG)
 
@@ -93,14 +93,29 @@ Tip: start Minecraft first. It takes about as long to load as Mad Max takes to r
 | Key | What it does |
 |---|---|
 | **F8** | Switch between **Minecraft controls** (you're Steve) and **Mad Max controls** (menus, the Magnum Opus garage, anything Minecraft can't do) |
-| **Esc** | Mad Max's pause menu (the controls go to Mad Max; F8 to come back) |
+| **Esc** | Mad Max's pause menu (the controls go to Mad Max, and come back to Minecraft when you unpause) |
 | **O** | Minecraft's own menu (options, Open to LAN) |
 | **E**, number keys, mouse | Minecraft's inventory, hotbar, attack/use, as usual |
 | **F5** | Minecraft's camera views (first person / behind / in front) |
-| **F** | Mad Max's interact, done by Mad Max with its own animation: get in/out of a car, climb a ladder, break through a breakable door, zip lines. Minecraft mode comes back when it's done |
+| **F** | Mad Max's interact, done by Mad Max with its own animation: get in/out of a car, climb a ladder, break through a breakable door. Stand still and press (or hold) F; Minecraft mode comes back when it's done. F8 cancels |
 | **F5** *(in a car)* | First person from the driver's seat ↔ Mad Max's chase camera |
 | **Page Up / Page Down**, **Home / End** *(first person in a car)* | Move your eyes up/down, forward/back (saved) |
 | Driving | Mad Max's own car controls (W/S, A/D, boost, guns...) |
+
+Cutscenes, Mad Max's pause menu and loading screens hand the controls to Mad Max by themselves, and
+Minecraft mode comes back when they're over.
+
+## Survival (one playthrough, both games)
+
+- **One life.** Max dying kills Steve and Steve dying kills Max. Steve respawns wherever Mad Max puts
+  Max (the checkpoint). Your Minecraft inventory is kept (`[Survival] bKeepInventory`).
+- **Getting hurt.** A hit on Max hurts Steve by the same share of his health, so a War Boy's punch is
+  small and a Top Dog or a car ram is big. Minecraft armour, shields and knockback apply.
+- **Food and water.** Max's canteen, water stations and food (maggots, dog food) fill Steve's hunger
+  bar by the share they heal Max. Hunger runs down the Minecraft way.
+- **Day and night.** Minecraft's day follows Mad Max's clock: real nights, where torches matter.
+- **Combat.** Minecraft weapons hurt Mad Max's NPCs (a wooden sword takes five hits, a diamond sword
+  three), and arrows reach War Criers on their towers.
 
 ## Settings
 
@@ -114,6 +129,8 @@ Everything is in **`<Mad Max>\madcraft\MadCraft.ini`**, commented. The useful on
 | `[Combat] fNpcMinecraftHealth = 20` | How tough Mad Max NPCs are against Minecraft weapons (higher = tougher) |
 | `[Camera] bFirstPerson`, `bHideMax` | First person from Steve's eyes; hide Max's model |
 | `[Vehicle] fFirstPersonEyeY` | First-person eye height in cars |
+| `[Survival] bKeepInventory`, `bAutoControls`, `bSyncTimeOfDay`, `bFoodFromMadMax` | Keep inventory on death; automatic controls in pauses/cutscenes; Minecraft's clock; Mad Max's food for hunger |
+| `[Combat] fPlayerDamageScale`, `bMinecraftDeathKillsMax` | How much Max's hits hurt Steve; the shared death |
 
 ## Troubleshooting
 
@@ -122,7 +139,7 @@ Everything is in **`<Mad Max>\madcraft\MadCraft.ini`**, commented. The useful on
 - **A "MadCraft is off" popup in Minecraft.** Start Minecraft from the **official launcher**, signed
   in with the Microsoft account that owns it.
 - **Nothing links up.** Check that Minecraft is on the **Fabric 26.3** profile with Fabric API and
-  `madcraft-0.1.0.jar` in `mods`, then load a save in Mad Max (the main menu doesn't link). The log is
+  `madcraft-0.2.0.jar` in `mods`, then load a save in Mad Max (the main menu doesn't link). The log is
   `<Mad Max>\madcraft\MadCraft.log`. Minecraft's own log is `%appdata%\.minecraft\logs\latest.log`.
 - **"Not enough memory" or crashes when starting.** Both games are big. Close other programs; 16 GB
   RAM is recommended.
@@ -135,7 +152,9 @@ Everything is in **`<Mad Max>\madcraft\MadCraft.ini`**, commented. The useful on
 - GOG Mad Max only, for now.
 - Torch light shines through walls (no shadows from Minecraft lights yet).
 - Other cars and people are not solid for Steve (only the world and props).
-- Mad Max's clock isn't read yet; Minecraft stays at noon (Mad Max's own lighting is unaffected).
+- Mad Max's own HUD (its health bar, prompts) still shows next to Minecraft's.
+- Camp fuel tanks don't break with arrows yet.
+- Ladders and breakable doors (F) are new: if one doesn't work, use F8 and Mad Max's controls.
 
 ## Building from source
 
