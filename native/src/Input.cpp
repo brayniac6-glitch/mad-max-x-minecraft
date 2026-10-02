@@ -161,6 +161,7 @@ namespace madcraft
 				if (a_down && !f8Down) {
 					st.madMaxControls = !st.madMaxControls;
 					st.autoControls = false;  // a manual choice
+					st.carHandoffUntilMs = 0;  // cancels an F action in progress
 					st.escAtMs = 0;
 					Input::ReleaseAll();
 					logger::info("controls: {}", st.madMaxControls ? "Mad Max" : "Minecraft");
@@ -345,6 +346,12 @@ namespace madcraft
 						keys[madMaxCarKey] = 0x80;
 					}
 				}
+				// F's action (climb, door, car): Mad Max gets F alone, so Max moves only by the action.
+				if (State().carHandoffUntilMs != 0 && carKey) {
+					const std::uint8_t f = keys[carKey];
+					std::memset(keys, 0, 256);
+					keys[carKey] = f;
+				}
 			} else if (kind == Kind::kMouse && a_size >= sizeof(DIMOUSESTATE)) {
 				auto*     m = static_cast<DIMOUSESTATE*>(a_data);
 				const int nButtons = a_size >= sizeof(DIMOUSESTATE2) ? 8 : 4;
@@ -354,6 +361,10 @@ namespace madcraft
 				if (State().carCam) {
 					m->lX = 0;  // the cab look has it, not Mad Max's chase camera
 					m->lY = 0;
+				}
+				if (State().carHandoffUntilMs != 0) {
+					std::memset(a_data, 0, a_size);  // F's action: no mouse for Mad Max either
+					return a_hr;
 				}
 				if (RouteToMinecraft()) {
 					// Mad Max's camera sets the look: it keeps the mouse movement, Minecraft keeps
@@ -424,6 +435,9 @@ namespace madcraft
 						buttons[e.dwOfs - DIMOFS_BUTTON0] = static_cast<BYTE>(e.dwData & 0x80);
 						OnMouse(0, 0, 0, buttons, 8, true);
 					}
+				}
+				if (State().carHandoffUntilMs != 0) {
+					keep = kind == Kind::kKeyboard && carKey && e.dwOfs == carKey;  // F's action: F alone
 				}
 				if (keep) {
 					a_data[kept++] = e;
