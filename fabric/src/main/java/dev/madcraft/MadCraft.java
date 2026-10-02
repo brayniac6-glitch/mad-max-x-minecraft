@@ -18,6 +18,7 @@ public final class MadCraft implements ModInitializer {
 	public static final String WORLD_NAME = "MadCraft";
 	public static final Logger LOG = LoggerFactory.getLogger(MOD_ID);
 	private static final String KIT2_TAG = "madcraft_builder_kit";
+	private static final String FLIGHT_KIT_TAG = "madcraft_flight_kit";
 
 	@Override
 	public void onInitialize() {
@@ -28,6 +29,7 @@ public final class MadCraft implements ModInitializer {
 		ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
 			giveStarterKit(handler.getPlayer());
 			giveBuilderKit(handler.getPlayer());
+			giveFlightKit(handler.getPlayer());
 			dressTestGuest(handler.getPlayer());
 		});
 	}
@@ -91,6 +93,25 @@ public final class MadCraft implements ModInitializer {
 	 * Once per player: armor (Mad Max's enemies hit back now) and building materials, since there is
 	 * no Minecraft terrain to mine in MadMax.
 	 */
+	/** An elytra and 4 stacks of firework rockets, once per player (also for players from before it existed). */
+	private static void giveFlightKit(ServerPlayer player) {
+		if (player.entityTags().contains(FLIGHT_KIT_TAG)) {
+			return;
+		}
+		giveOrDrop(player, new ItemStack(Items.ELYTRA));
+		for (int i = 0; i < 4; i++) {
+			giveOrDrop(player, new ItemStack(Items.FIREWORK_ROCKET, 64));
+		}
+		player.addTag(FLIGHT_KIT_TAG);
+		LOG.info("MadCraft: gave flight kit (elytra, 256 rockets) to {}", player.getName().getString());
+	}
+
+	private static void giveOrDrop(ServerPlayer player, ItemStack stack) {
+		if (!player.getInventory().add(stack) && !stack.isEmpty()) {
+			LOG.warn("MadCraft: inventory full, couldn't give {} x{}", stack.getItem(), stack.getCount());
+		}
+	}
+
 	private static void giveBuilderKit(ServerPlayer player) {
 		if (player.entityTags().contains(KIT2_TAG)) {
 			return;

@@ -22,14 +22,14 @@ real copies:
 
 ## Download
 
-Get **`MadCraft-0.2.0.zip`** from this repository's **[Releases](../../releases)** page. Inside:
+Get **`MadCraft-0.2.1.zip`** from this repository's **[Releases](../../releases)** page. Inside:
 
 ```
 Mad Max folder/
     dinput8.dll              <- the Mad Max plugin
     madcraft/MadCraft.ini    <- settings
 Minecraft mods folder/
-    madcraft-0.2.0.jar       <- the Minecraft mod
+    madcraft-0.2.1.jar       <- the Minecraft mod
 ```
 
 ## Install
@@ -65,7 +65,7 @@ Things to know:
 4. Put these in it:
    - **Fabric API** for 26.3 ([Modrinth](https://modrinth.com/mod/fabric-api/versions) or
      [CurseForge](https://www.curseforge.com/minecraft/mc-mods/fabric-api))
-   - **`madcraft-0.2.0.jar`** from the zip's `Minecraft mods folder`
+   - **`madcraft-0.2.1.jar`** from the zip's `Minecraft mods folder`
 
 #### 2. Mad Max (GOG)
 
@@ -105,6 +105,20 @@ Cutscenes, Mad Max's pause menu and loading screens hand the controls to Mad Max
 Minecraft mode comes back when they're over.
 
 
+## Getting items
+
+Minecraft's side is its own **"MadCraft"** world, made and opened by MadCraft (you don't make one; your
+other worlds aren't used). It's an empty void, so there's nothing to mine there. Your items come from:
+
+- **Starting kits**, given the first time you join: diamond sword and pickaxe, bow and arrows, shield,
+  full iron armour, an **elytra with 4 stacks of firework rockets**, food, golden apples, torches,
+  lanterns, ladders and stacks of building blocks.
+- **Commands** (cheats are on in the MadCraft world): press **T** and type e.g. `/give @s netherite_sword`
+  or `/give @s torch 64`.
+- **Creative mode**: `/gamemode creative`, take what you want, then `/gamemode survival`.
+
+Your inventory stays in the MadCraft world between sessions, and is kept when you die.
+
 ## Settings
 
 Everything is in **`<Mad Max>\madcraft\MadCraft.ini`**, commented. The useful ones:
@@ -127,7 +141,7 @@ Everything is in **`<Mad Max>\madcraft\MadCraft.ini`**, commented. The useful on
 - **A "MadCraft is off" popup in Minecraft.** Start Minecraft from the **official launcher**, signed
   in with the Microsoft account that owns it.
 - **Nothing links up.** Check that Minecraft is on the **Fabric 26.3** profile with Fabric API and
-  `madcraft-0.2.0.jar` in `mods`, then load a save in Mad Max (the main menu doesn't link). The log is
+  `madcraft-0.2.1.jar` in `mods`, then load a save in Mad Max (the main menu doesn't link). The log is
   `<Mad Max>\madcraft\MadCraft.log`. Minecraft's own log is `%appdata%\.minecraft\logs\latest.log`.
 - **"Not enough memory" or crashes when starting.** Both games are big. Close other programs; 16 GB
   RAM is recommended.
