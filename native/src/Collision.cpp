@@ -16,7 +16,7 @@ namespace madcraft::Collision
 		constexpr int   kCells = kRegion * kSub;  // grid cells across a region
 		constexpr int   kRadius = 3;             // column-regions around the player (7 x 7 = 56 x 56 blocks)
 		constexpr float kAbove = 4.0f;           // rays start this far above the player's feet...
-		constexpr float kBelow = 100.0f;         // ...and reach this far below (tall drops aren't misses)
+		constexpr float kBelow = 40.0f;          // ...and reach this far below
 		constexpr float kRescanShift = 3.0f;     // re-scan a column-region once the player is this much higher/lower
 		constexpr double kBudgetMs = 1.5;        // raycasting per frame
 		constexpr float kNoGround = -1.0e30f;
@@ -88,52 +88,8 @@ namespace madcraft::Collision
 			return first;
 		}
 
-		// Corners whose ray found nothing (Mad Max hasn't streamed that bit of physics in yet, mostly)
-		// take the lowest ground around them, so the player doesn't drop through a hole meanwhile; the
-		// column is rescanned (its misses) and real ground replaces the fill. Corners with no ground
-		// anywhere near stay holes.
-		Column Filled(const Column& a_col)
+		void SendRegion(int a_rx, int a_ry, int a_rz, const Column& a_col)
 		{
-			Column out = a_col;
-			if (a_col.misses == 0) {
-				return out;
-			}
-			for (int pass = 0; pass < 4; ++pass) {
-				Column next = out;
-				bool   changed = false;
-				for (int z = 0; z <= kCells; ++z) {
-					for (int x = 0; x <= kCells; ++x) {
-						if (out.heights[z][x] != kNoGround) {
-							continue;
-						}
-						float lowest = 1e30f;
-						int   found = 0;
-						for (int dz = -1; dz <= 1; ++dz) {
-							for (int dx = -1; dx <= 1; ++dx) {
-								const int nz = z + dz, nx = x + dx;
-								if ((dz || dx) && nz >= 0 && nz <= kCells && nx >= 0 && nx <= kCells && out.heights[nz][nx] != kNoGround) {
-									lowest = std::min(lowest, out.heights[nz][nx]);
-									++found;
-								}
-							}
-						}
-						if (found >= 2) {
-							next.heights[z][x] = lowest;
-							changed = true;
-						}
-					}
-				}
-				out = next;
-				if (!changed) {
-					break;
-				}
-			}
-			return out;
-		}
-
-		void SendRegion(int a_rx, int a_ry, int a_rz, const Column& a_scanned)
-		{
-			const Column a_col = Filled(a_scanned);
 			auto&       link = Link::Get();
 			const int   x0 = a_rx * kRegion, y0 = a_ry * kRegion, z0 = a_rz * kRegion;
 			const float yLo = float(y0) - 1.0f, yHi = float(y0 + kRegion) + 1.0f;

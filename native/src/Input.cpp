@@ -182,6 +182,13 @@ namespace madcraft
 				f5Down = a_down;
 				return;
 			}
+			if (carKey && a_dik == carKey) {
+				// Tracked whoever has the controls: the hand-off keeps going while F is held.
+				if (st.interactHeld && !a_down) {
+					st.interactReleasedMs = ::GetTickCount64();
+				}
+				st.interactHeld = a_down;
+			}
 			if (carKey && a_dik == carKey && a_down && !carDown) {
 				logger::info("vehicle: car key pressed (controls {}, Minecraft has the player {}, in a car {}, screen open {}, menu {})",
 					st.madMaxControls ? "Mad Max" : "Minecraft", st.minecraftOwnsPlayer.load(), st.driving.load(), st.mcScreenOpen.load(), st.gameMenuOpen.load());

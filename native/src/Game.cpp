@@ -496,8 +496,10 @@ namespace madcraft
 				if (step > 0.01f) {
 					handoffStillSinceMs = now;
 				}
-				const bool idle = now - handoffStartMs > 900 && moved < 0.25f;
-				const bool done = moved >= 0.25f && now - handoffStillSinceMs > 800;
+				// Held F keeps it going (Mad Max's hold-to-climb / hold-to-break); idle 1.5 s after release.
+				const auto heldOrStart = std::max<std::uint64_t>(handoffStartMs, st.interactReleasedMs);
+				const bool idle = !st.interactHeld && now - heldOrStart > 1500 && moved < 0.25f;
+				const bool done = !st.interactHeld && moved >= 0.25f && now - handoffStillSinceMs > 1000;
 				if (driving || now >= handoff || idle || done) {
 					st.carHandoffUntilMs = 0;
 					st.madMaxControls = false;
@@ -733,10 +735,10 @@ namespace madcraft
 				horizSpeed = horizSpeed * 0.9 + (moved / dt) * 0.1;
 				prevFeetForSpeed = smoothFeet;
 			}
-			// Well under it (6+ blocks) is through the world whatever the speed (an elytra skimming a slope
-			// is never that deep), and so is anywhere near the void.
+			// Far below where the player last stood (64+ blocks) is the void, whatever the speed: no
+			// Mad Max ground is that far under a walkable spot.
 			const bool shallowFall = horizSpeed < 8.0 && !(mc.flags & proto::kMcOnGround) && !(mc.flags & proto::kMcFlying) && mc.y < ground - 2.0;
-			const bool deepFall = (ground > -1.0e29f && mc.y < ground - 6.0) || (haveLastSafe && mc.y < lastSafe.y - 64.0);
+			const bool deepFall = haveLastSafe && mc.y < lastSafe.y - 64.0;
 			if (puppet && rescueFrames == 0 && ::GetTickCount64() - lastRescueMs > 2000 && (ground > -1.0e29f || deepFall) && (shallowFall || deepFall)) {
 				lastRescueMs = ::GetTickCount64();
 				const McVec target = haveLastSafe ? lastSafe : McVec{ mc.x, double(ground) + 0.1, mc.z };
