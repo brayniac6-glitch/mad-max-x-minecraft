@@ -28,3 +28,6 @@ triage (name + ns) → type (sig, types/fields) → spec (1-line behaviour) → 
 - `python tools/sheet.py claim|release <sub> [agent]`
 - `python tools/sheet.py decomp <fid|addr>` → `decomp/<fid>.c` (cached)
 - `python tools/sheet.py next <sub> [n]`: highest-value unfinished rows to work on
+- `python tools/make_signatures.py`: after adding or changing any `MadMax.exe+...` address in
+  `native/MadCraft.ini`, regenerate `native/src/Signatures.inc` (Steam/other builds find addresses
+  by these). The plugin logs `addresses: GOG build; N/N signatures agree` when they're right.

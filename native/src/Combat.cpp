@@ -1,5 +1,7 @@
 #include "Combat.h"
 
+#include "Addresses.h"
+
 #include "PlayerHurt.h"
 
 namespace madcraft::Combat
@@ -85,10 +87,9 @@ namespace madcraft::Combat
 					rest = rest.substr(0, sp);
 				}
 				name.erase(0, name.find_first_not_of(" \t"));
-				try {
-					a_vtables.push_back(MadMax::ModuleBase() + std::stoull(rest, nullptr, 16));
+				if (const auto vt = Addresses::FromText("MadMax.exe+" + rest)) {
+					a_vtables.push_back(vt);
 					a_names.push_back(name.empty() ? std::string("object") : name);
-				} catch (...) {
 				}
 			}
 		}
@@ -320,10 +321,7 @@ namespace madcraft::Combat
 		ParseVtables(IniString("Combat", "sBreakableVtables", ""), breakableVtables, breakableNames);
 		ParseVtables(IniString("Combat", "sProbeVtables", ""), probeVtables, probeNames);
 		if (const auto fnText = IniString("Combat", "sBreakableDamageFn", ""); fnText.find('+') != std::string::npos) {
-			try {
-				breakableDamageFn = MadMax::ModuleBase() + std::stoull(fnText.substr(fnText.find('+') + 1), nullptr, 16);
-			} catch (...) {
-			}
+			breakableDamageFn = Addresses::FromText(fnText);
 		}
 		logger::info("combat: {}; NPCs take hits like a {}-health Minecraft mob; {} breakable object classes ({})", enabled ? "on" : "off", npcMcHealth,
 			breakableVtables.size(), objectsArrowsOnly ? "arrows only" : "any hit");

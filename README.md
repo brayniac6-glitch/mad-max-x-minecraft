@@ -15,21 +15,21 @@ real copies:
 
 | | Requirement |
 |---|---|
-| **Mad Max** | The **GOG** PC version (build `565D5965`). MadCraft checks for a genuine Steam/GOG install and for this exact build. On any other build it stays off (with a message) instead of risking a crash. The Steam version isn't supported yet because its exe differs. |
+| **Mad Max** | The **GOG** or **Steam** PC version. GOG (build `565D5965`) is the one MadCraft was built and tested on. **Steam is new and untested**: MadCraft finds everything it needs in the Steam exe by itself, and if anything is missing it stays off with a message instead of risking a crash (please send us `madcraft\MadCraft.log` either way). MadCraft checks for a genuine Steam/GOG install. |
 | **Minecraft** | **Minecraft: Java Edition**, bought, signed in with your **Microsoft account** in any launcher (official, Prism, MultiMC, ATLauncher, Modrinth App, CurseForge). MadCraft stays off on offline or cracked accounts. |
 | **Minecraft version** | **26.3** with **[Fabric Loader](https://fabricmc.net/use/installer/) 0.19.5+** and **[Fabric API](https://modrinth.com/mod/fabric-api) 0.161.0+26.3** |
 | **PC** | Windows 10/11 64-bit, DirectX 11, **16 GB RAM** recommended (both games run at once) |
 
 ## Download
 
-Get **`MadCraft-0.2.2.zip`** from this repository's **[Releases](../../releases)** page. Inside:
+Get **`MadCraft-0.3.0.zip`** from this repository's **[Releases](../../releases)** page. Inside:
 
 ```
 Mad Max folder/
     dinput8.dll              <- the Mad Max plugin
     madcraft/MadCraft.ini    <- settings
 Minecraft mods folder/
-    madcraft-0.2.2.jar       <- the Minecraft mod
+    madcraft-0.3.0.jar       <- the Minecraft mod
 ```
 
 ## Install
@@ -64,7 +64,7 @@ MadCraft confirms that with Mojang the first time (it then works offline too).
 
 1. **Add Instance** → Minecraft **26.3** → Mod loader **Fabric** (0.19.5 or newer) → OK.
 2. Select the instance → **Edit** → **Mods** → **Download mods** → search **Fabric API** → install it.
-3. In the same Mods page, **Add file** → pick **`madcraft-0.2.2.jar`** from the zip's `Minecraft mods folder`.
+3. In the same Mods page, **Add file** → pick **`madcraft-0.3.0.jar`** from the zip's `Minecraft mods folder`.
 4. Make sure your Microsoft account is selected (top right), then **Launch**.
 
 **Official Minecraft Launcher:**
@@ -78,12 +78,14 @@ MadCraft confirms that with Mojang the first time (it then works offline too).
 4. Put these in it:
    - **Fabric API** for 26.3 ([Modrinth](https://modrinth.com/mod/fabric-api/versions) or
      [CurseForge](https://www.curseforge.com/minecraft/mc-mods/fabric-api))
-   - **`madcraft-0.2.2.jar`** from the zip's `Minecraft mods folder`
+   - **`madcraft-0.3.0.jar`** from the zip's `Minecraft mods folder`
 
-#### 2. Mad Max (GOG)
+#### 2. Mad Max (GOG or Steam)
 
-1. Find your Mad Max folder (the one with `MadMax.exe`). For GOG Galaxy it's usually
-   `C:\Program Files\GOG Galaxy\Games\Mad Max` (Galaxy: Mad Max → *Manage installation* → *Show folder*).
+1. Find your Mad Max folder (the one with `MadMax.exe`).
+   - **GOG Galaxy:** usually `C:\Program Files\GOG Galaxy\Games\Mad Max` (Galaxy: Mad Max → *Manage installation* → *Show folder*).
+   - **Steam:** right-click Mad Max in your library → *Manage* → *Browse local files* (usually
+     `C:\Program Files (x86)\Steam\steamapps\common\Mad Max`).
 2. Copy **everything inside** the zip's `Mad Max folder` into it: `dinput8.dll` next to
    `MadMax.exe`, and the `madcraft` folder.
 
@@ -149,12 +151,13 @@ Everything is in **`<Mad Max>\madcraft\MadCraft.ini`**, commented. The useful on
 
 ## Troubleshooting
 
-- **A "MadCraft is off" message when Mad Max starts.** Your Mad Max isn't the supported GOG build,
-  or isn't a Steam/GOG install. Mad Max still runs normally without MadCraft.
+- **A "MadCraft is off" message when Mad Max starts.** Either it isn't a Steam/GOG install, or (on a
+  Steam copy) MadCraft couldn't find everything it needs in that build; the message names what's
+  missing. Mad Max still runs normally without MadCraft. Please send `madcraft\MadCraft.log`.
 - **A "MadCraft is off" popup in Minecraft.** Sign in to your launcher with the Microsoft account that
   owns Minecraft: Java Edition (offline accounts don't work), and be online the first time.
 - **Nothing links up.** Check that Minecraft is on the **Fabric 26.3** profile with Fabric API and
-  `madcraft-0.2.2.jar` in `mods`, then load a save in Mad Max (the main menu doesn't link). The log is
+  `madcraft-0.3.0.jar` in `mods`, then load a save in Mad Max (the main menu doesn't link). The log is
   `<Mad Max>\madcraft\MadCraft.log`. Minecraft's own log is `%appdata%\.minecraft\logs\latest.log`.
 - **"Not enough memory" or crashes when starting.** Both games are big. Close other programs; 16 GB
   RAM is recommended.
@@ -164,7 +167,7 @@ Everything is in **`<Mad Max>\madcraft\MadCraft.ini`**, commented. The useful on
 
 ## Known limits
 
-- GOG Mad Max only, for now.
+- Steam Mad Max is supported but untested so far (GOG is the tested version).
 - Torch light shines through walls (no shadows from Minecraft lights yet).
 - Other cars and people are not solid for Steve (only the world and props).
 - Mad Max's own HUD (its health bar, prompts) still shows next to Minecraft's.

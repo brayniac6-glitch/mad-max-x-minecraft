@@ -1,5 +1,7 @@
 #include "MadMax.h"
 
+#include "Addresses.h"
+
 namespace madcraft
 {
 	namespace
@@ -217,14 +219,13 @@ namespace madcraft
 				}
 			}
 			const auto& head = parts.front();
-			const auto  plus = head.find('+');
-			HMODULE     module = ::GetModuleHandleA(plus == std::string::npos ? nullptr : head.substr(0, plus).c_str());
-			if (!module) {
-				logger::warn("hook {}: module in '{}' not loaded", a_key, head);
+			// The GOG address in the ini, wherever this build has it (Addresses: signatures).
+			c.base = Addresses::FromText(head);
+			if (!c.base) {
+				logger::warn("hook {}: '{}' not found in this build; that feature stays off", a_key, head);
 				return;
 			}
 			try {
-				c.base = reinterpret_cast<std::uintptr_t>(module) + std::stoull(plus == std::string::npos ? head : head.substr(plus + 1), nullptr, 16);
 				for (std::size_t i = 1; i < parts.size(); ++i) {
 					c.offsets.push_back(std::stoull(parts[i], nullptr, 16));
 				}
@@ -280,8 +281,14 @@ namespace madcraft
 		}
 
 		// Follows the chain to the final address. Every step is checked, so a stale chain just fails.
+		// Init has run (it runs on the startup thread once the game's code is readable).
+		std::atomic<bool> ready{ false };
+
 		bool Resolve(Chain& a_chain, std::uintptr_t& a_out)
 		{
+			if (!ready) {
+				return false;
+			}
 			if (!a_chain.valid) {
 				if (!a_chain.warned) {
 					a_chain.warned = true;
@@ -410,6 +417,7 @@ namespace madcraft
 				translationIndex = 12;
 			}
 			logger::info("world: {} units/block, flipX {}, flipZ {}, yaw offset {}", scale, signX < 0, signZ < 0, yawOffsetDeg);
+			ready = true;
 		}
 
 		bool PlayerMatrixAddress(std::uintptr_t& a_out)
@@ -555,7 +563,7 @@ namespace madcraft
 
 		bool RaycastAvailable()
 		{
-			return physicsSystem.valid && raycastFn.valid && staticFilterCtor.valid;
+			return ready && physicsSystem.valid && raycastFn.valid && staticFilterCtor.valid;
 		}
 
 		bool RaycastStatic(const Vec3& a_from, const Vec3& a_to, Vec3& a_hit)
@@ -616,7 +624,7 @@ namespace madcraft
 
 		bool SetHealth(std::uintptr_t a_object, float a_health)
 		{
-			return setHealthFn && CallSetHealth(setHealthFn, a_object, a_health);
+			return ready && setHealthFn && CallSetHealth(setHealthFn, a_object, a_health);
 		}
 
 		bool ReadHealth(std::uintptr_t a_object, float& a_health, float& a_max)
@@ -685,7 +693,7 @@ namespace madcraft
 		bool DamageCharacter(std::uintptr_t a_object, float a_amount, float& a_dealt)
 		{
 			a_dealt = 0.0f;
-			if (!inflictorVtable || characterDamageSlot < 0) {
+			if (!ready || !inflictorVtable || characterDamageSlot < 0) {
 				return false;
 			}
 			std::uintptr_t vtbl = 0, fn = 0;

@@ -1,3 +1,4 @@
+#include "Addresses.h"
 #include "CameraDriver.h"
 #include "Combat.h"
 #include "PlayerHurt.h"
@@ -60,9 +61,20 @@ namespace
 		}
 	}
 
-	// Runs off the loader lock: waits for the game's window and D3D11 device, then hooks Present.
+	void Refuse(const std::wstring& a_why);
+
+	// Runs off the loader lock: finds MadCraft's addresses in this build of Mad Max (after a DRM
+	// wrapper has unpacked the code), sets everything up, then waits for the game's window and D3D11
+	// device and hooks Present.
 	void StartupThread()
 	{
+		if (!madcraft::Addresses::Resolve()) {
+			Refuse(std::format(L"MadCraft couldn't find everything it needs in this Mad Max build. Missing: {}",
+				std::filesystem::path(madcraft::Addresses::Missing()).wstring()));
+			return;
+		}
+		madcraft::MadMax::Init();
+		madcraft::Combat::Init();
 		madcraft::CameraDriver::Install();
 		madcraft::HideMax::Install();
 		madcraft::PlayerHurt::Install();
@@ -146,12 +158,9 @@ namespace
 		const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(base);
 		const auto* nt = reinterpret_cast<const IMAGE_NT_HEADERS64*>(base + dos->e_lfanew);
 		const DWORD stamp = nt->FileHeader.TimeDateStamp, size = nt->OptionalHeader.SizeOfImage;
-		logger::info("Mad Max: {} copy, build {:08X} (image {:X})", gog ? "GOG" : "Steam", stamp, size);
-		if ((stamp != kKnownTimestamp || size != kKnownImageSize) && !madcraft::IniBool("Hooks", "bAllowUnknownBuild", false)) {
-			Refuse(std::format(L"This Mad Max build ({}, {:08X}) isn't supported yet. MadCraft was made for the GOG version (build {:08X}).",
-				gog ? L"GOG" : L"Steam", stamp, kKnownTimestamp));
-			return false;
-		}
+		const bool known = stamp == kKnownTimestamp && size == kKnownImageSize;
+		logger::info("Mad Max: {} copy, build {:08X} (image {:X}){}", gog ? "GOG" : "Steam", stamp, size,
+			known ? "" : "; not the GOG build MadCraft's addresses are from: finding them by signature");
 		return true;
 	}
 }
@@ -167,7 +176,7 @@ BOOL APIENTRY DllMain(HMODULE a_module, DWORD a_reason, LPVOID)
 			return TRUE;
 		}
 		madcraft::log::Open(madcraft::ModDir() / L"MadCraft.log");
-		logger::info("MadCraft 0.2.2 loading");
+		logger::info("MadCraft 0.3.0 loading");
 		if (!CheckGame()) {
 			return TRUE;
 		}
@@ -175,8 +184,6 @@ BOOL APIENTRY DllMain(HMODULE a_module, DWORD a_reason, LPVOID)
 			logger::error("MinHook failed to initialize; MadCraft disabled");
 			return TRUE;
 		}
-		madcraft::MadMax::Init();
-		madcraft::Combat::Init();
 		if (!madcraft::Link::Get().Create()) {
 			logger::error("MadCraft disabled: could not create shared memory");
 			return TRUE;

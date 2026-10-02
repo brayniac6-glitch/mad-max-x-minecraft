@@ -20,7 +20,9 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <ranges>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "Log.h"

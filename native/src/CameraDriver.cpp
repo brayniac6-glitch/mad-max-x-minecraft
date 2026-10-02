@@ -1,5 +1,7 @@
 #include "CameraDriver.h"
 
+#include "Addresses.h"
+
 #include <MinHook.h>
 
 // SkyCraft's CameraDriver (MIT, chasmlol) for Mad Max: while Minecraft drives the player, Mad Max's
@@ -65,19 +67,11 @@ namespace madcraft::CameraDriver
 			logger::info("camera driver: [Hooks] RenderCameraUpdate not set; Mad Max keeps its camera");
 			return false;
 		}
-		const auto plus = text.find('+');
-		HMODULE    module = ::GetModuleHandleA(plus == std::string::npos ? nullptr : text.substr(0, plus).c_str());
-		if (!module) {
+		void* target = reinterpret_cast<void*>(Addresses::FromText(text));
+		if (!target) {
+			logger::warn("camera driver: RenderCameraUpdate '{}' not found in this build", text);
 			return false;
 		}
-		std::uintptr_t rva = 0;
-		try {
-			rva = std::stoull(plus == std::string::npos ? text : text.substr(plus + 1), nullptr, 16);
-		} catch (...) {
-			logger::warn("camera driver: can't parse RenderCameraUpdate '{}'", text);
-			return false;
-		}
-		void* target = reinterpret_cast<std::uint8_t*>(module) + rva;
 		const bool ok = MH_CreateHook(target, reinterpret_cast<void*>(&HookUpdate), reinterpret_cast<void**>(&origUpdate)) == MH_OK &&
 		                MH_EnableHook(target) == MH_OK;
 		logger::info("camera driver: render camera update {}", ok ? "hooked" : "hook failed");

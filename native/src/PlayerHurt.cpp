@@ -1,5 +1,7 @@
 #include "PlayerHurt.h"
 
+#include "Addresses.h"
+
 #include "Combat.h"
 #include "Game.h"
 
@@ -99,13 +101,11 @@ namespace madcraft::PlayerHurt
 			logger::info("player hurt: off");
 			return;
 		}
-		std::uintptr_t rva = 0;
-		try {
-			rva = std::stoull(text.substr(plus + 1), nullptr, 16);
-		} catch (...) {
+		void* target = reinterpret_cast<void*>(Addresses::FromText(text));
+		if (!target) {
+			logger::warn("player hurt: CharacterDamage '{}' not found in this build", text);
 			return;
 		}
-		void*      target = reinterpret_cast<void*>(MadMax::ModuleBase() + rva);
 		const bool ok = MH_CreateHook(target, reinterpret_cast<void*>(&HookDamage), reinterpret_cast<void**>(&origDamage)) == MH_OK &&
 		                MH_EnableHook(target) == MH_OK;
 		logger::info("player hurt: Max's hits go to Minecraft (x{}){}", scale, ok ? "" : " - HOOK FAILED");

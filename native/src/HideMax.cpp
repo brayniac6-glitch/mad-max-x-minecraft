@@ -1,5 +1,7 @@
 #include "HideMax.h"
 
+#include "Addresses.h"
+
 #include <MinHook.h>
 
 // Max's own model out of the picture while Minecraft drives him (Steve is drawn instead), the way
@@ -106,16 +108,7 @@ namespace madcraft::HideMax
 		void* Address(const char* a_key)
 		{
 			const auto text = IniString("Hooks", a_key, "");
-			const auto plus = text.find('+');
-			if (text.empty() || plus == std::string::npos) {
-				return nullptr;
-			}
-			HMODULE module = ::GetModuleHandleA(text.substr(0, plus).c_str());
-			try {
-				return module ? reinterpret_cast<std::uint8_t*>(module) + std::stoull(text.substr(plus + 1), nullptr, 16) : nullptr;
-			} catch (...) {
-				return nullptr;
-			}
+			return text.empty() ? nullptr : reinterpret_cast<void*>(Addresses::FromText(text));
 		}
 	}
 
