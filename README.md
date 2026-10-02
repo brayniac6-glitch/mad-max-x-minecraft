@@ -97,7 +97,6 @@ Tip: start Minecraft first. It takes about as long to load as Mad Max takes to r
 | **O** | Minecraft's own menu (options, Open to LAN) |
 | **E**, number keys, mouse | Minecraft's inventory, hotbar, attack/use, as usual |
 | **F5** | Minecraft's camera views (first person / behind / in front) |
-| **F** | Mad Max's interact, done by Mad Max with its own animation: get in/out of a car, climb a ladder, break through a breakable door. Stand still and press (or hold) F; Minecraft mode comes back when it's done. F8 cancels |
 | **F5** *(in a car)* | First person from the driver's seat ↔ Mad Max's chase camera |
 | **Page Up / Page Down**, **Home / End** *(first person in a car)* | Move your eyes up/down, forward/back (saved) |
 | Driving | Mad Max's own car controls (W/S, A/D, boost, guns...) |
@@ -105,17 +104,6 @@ Tip: start Minecraft first. It takes about as long to load as Mad Max takes to r
 Cutscenes, Mad Max's pause menu and loading screens hand the controls to Mad Max by themselves, and
 Minecraft mode comes back when they're over.
 
-## Survival (one playthrough, both games)
-
-- **One life.** Max dying kills Steve and Steve dying kills Max. Steve respawns wherever Mad Max puts
-  Max (the checkpoint). Your Minecraft inventory is kept (`[Survival] bKeepInventory`).
-- **Getting hurt.** A hit on Max hurts Steve by the same share of his health, so a War Boy's punch is
-  small and a Top Dog or a car ram is big. Minecraft armour, shields and knockback apply.
-- **Food and water.** Max's canteen, water stations and food (maggots, dog food) fill Steve's hunger
-  bar by the share they heal Max. Hunger runs down the Minecraft way.
-- **Day and night.** Minecraft's day follows Mad Max's clock: real nights, where torches matter.
-- **Combat.** Minecraft weapons hurt Mad Max's NPCs (a wooden sword takes five hits, a diamond sword
-  three), and arrows reach War Criers on their towers.
 
 ## Settings
 
