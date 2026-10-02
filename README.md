@@ -2,7 +2,7 @@
 ![image alt](https://github.com/brayniac6-glitch/mad-max-x-minecraft/blob/ce42237e496d2f352a837946c94994868ecc5c30/screenshot.png)
 Play Mad Max in Minecraft
 
-Based on [SkyCraft](https://github.com/chasmlol/SkyCraft), which does the same for Skyrim (MIT licence).
+Based on [SkyCraft](https://github.com/chasmlol/SkyCraft), which does the same for Skyrim (MIT licence). HUGE CREDIT TO CHASM
 
 ## Features
 
