@@ -190,11 +190,11 @@ namespace madcraft
 				if (a_down && !carDown && !st.mcScreenOpen && !st.gameMenuOpen && st.minecraftOwnsPlayer && !st.driving) {
 					// On foot: Mad Max only lets Max into a car under its own control, so it gets the
 					// controls (and this very press) until he's in, then Minecraft mode comes back.
-					st.carHandoffUntilMs = ::GetTickCount64() + 4000;
+					st.carHandoffUntilMs = ::GetTickCount64() + 20000;  // ends as soon as the action does
 					st.madMaxControls = true;
 					Input::ReleaseAll();
 					carDown = a_down;
-					logger::info("vehicle: car key -> Mad Max takes Max to get in (Minecraft mode again once in the car)");
+					logger::info("interact: F -> Mad Max does it (car, ladder, door...), Minecraft mode again once it's done");
 					return;
 				}
 				if (a_down && !carDown && !st.mcScreenOpen && !st.gameMenuOpen && (st.minecraftOwnsPlayer || st.driving)) {

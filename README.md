@@ -97,7 +97,7 @@ Tip: start Minecraft first. It takes about as long to load as Mad Max takes to r
 | **O** | Minecraft's own menu (options, Open to LAN) |
 | **E**, number keys, mouse | Minecraft's inventory, hotbar, attack/use, as usual |
 | **F5** | Minecraft's camera views (first person / behind / in front) |
-| **F** | At a car: get in. In a car: get out |
+| **F** | Mad Max's interact, done by Mad Max with its own animation: get in/out of a car, climb a ladder, break through a breakable door, zip lines. Minecraft mode comes back when it's done |
 | **F5** *(in a car)* | First person from the driver's seat ↔ Mad Max's chase camera |
 | **Page Up / Page Down**, **Home / End** *(first person in a car)* | Move your eyes up/down, forward/back (saved) |
 | Driving | Mad Max's own car controls (W/S, A/D, boost, guns...) |

@@ -479,23 +479,30 @@ namespace madcraft
 			// The car key's hand-off to Mad Max (it only lets Max into a car under its own control),
 			// invisible: Minecraft's view stays until he's in the car. Over once he's in, or as soon as
 			// it's clear nothing is happening (no car here: Max doesn't start walking to a door).
+			// Also ladders, breakable doors, zip lines: over once Max has moved and come to rest again.
 			static std::uint64_t handoffSeen = 0;
-			static Vec3          handoffFrom{};
-			static std::uint64_t handoffStartMs = 0;
+			static Vec3          handoffFrom{}, handoffLast{};
+			static std::uint64_t handoffStartMs = 0, handoffStillSinceMs = 0;
 			if (const auto handoff = st.carHandoffUntilMs.load(); handoff != 0) {
 				const auto now = ::GetTickCount64();
 				if (handoff != handoffSeen) {
 					handoffSeen = handoff;
-					handoffFrom = feet;
-					handoffStartMs = now;
+					handoffFrom = handoffLast = feet;
+					handoffStartMs = handoffStillSinceMs = now;
 				}
-				const float moved = std::hypot(feet.x - handoffFrom.x, feet.z - handoffFrom.z);
-				const bool  idle = now - handoffStartMs > 900 && moved < 0.25f;
-				if (driving || now >= handoff || idle) {
+				const float moved = std::hypot(feet.x - handoffFrom.x, feet.y - handoffFrom.y, feet.z - handoffFrom.z);
+				const float step = std::hypot(feet.x - handoffLast.x, feet.y - handoffLast.y, feet.z - handoffLast.z);
+				handoffLast = feet;
+				if (step > 0.01f) {
+					handoffStillSinceMs = now;
+				}
+				const bool idle = now - handoffStartMs > 900 && moved < 0.25f;
+				const bool done = moved >= 0.25f && now - handoffStillSinceMs > 800;
+				if (driving || now >= handoff || idle || done) {
 					st.carHandoffUntilMs = 0;
 					st.madMaxControls = false;
 					Input::ReleaseAll();
-					logger::info("vehicle: {}", driving ? "in the car" : idle ? "no car to get into" : "didn't get in");
+					logger::info("interact: {}", driving ? "in the car" : idle ? "nothing to do here" : done ? "done (climbed / opened / moved)" : "timed out");
 				}
 			}
 			const bool handingOff = st.carHandoffUntilMs != 0;
@@ -674,6 +681,11 @@ namespace madcraft
 					const float r0[3] = { cameraHanded * (r1[1] * r2[2] - r1[2] * r2[1]), cameraHanded * (r1[2] * r2[0] - r1[0] * r2[2]),
 						cameraHanded * (r1[0] * r2[1] - r1[1] * r2[0]) };
 					Vec3 eye = MadMax::FromMc(smoothEye.x, smoothEye.y, smoothEye.z);
+					if (handingOff) {
+						// Mad Max moves Max (up a ladder, through a door): the eyes go with him.
+						const Vec3 up = MadMax::FromMc(0.0, 1.62, 0.0), base = MadMax::FromMc(0.0, 0.0, 0.0);
+						eye = { feet.x + (up.x - base.x), feet.y + (up.y - base.y), feet.z + (up.z - base.z) };
+					}
 					if (mc.cameraMode != 0 && mc.cameraDistance > 0.0f) {
 						const float d = mc.cameraDistance * static_cast<float>(proto::kUnitsPerBlock);
 						eye = { eye.x - f[0] * d, eye.y - f[1] * d, eye.z - f[2] * d };
@@ -721,8 +733,11 @@ namespace madcraft
 				horizSpeed = horizSpeed * 0.9 + (moved / dt) * 0.1;
 				prevFeetForSpeed = smoothFeet;
 			}
-			if (puppet && horizSpeed < 8.0 && rescueFrames == 0 && ::GetTickCount64() - lastRescueMs > 2000 && ground > -1.0e29f &&
-				!(mc.flags & proto::kMcOnGround) && !(mc.flags & proto::kMcFlying) && mc.y < ground - 2.0) {
+			// Well under it (6+ blocks) is through the world whatever the speed (an elytra skimming a slope
+			// is never that deep), and so is anywhere near the void.
+			const bool shallowFall = horizSpeed < 8.0 && !(mc.flags & proto::kMcOnGround) && !(mc.flags & proto::kMcFlying) && mc.y < ground - 2.0;
+			const bool deepFall = (ground > -1.0e29f && mc.y < ground - 6.0) || (haveLastSafe && mc.y < lastSafe.y - 64.0);
+			if (puppet && rescueFrames == 0 && ::GetTickCount64() - lastRescueMs > 2000 && (ground > -1.0e29f || deepFall) && (shallowFall || deepFall)) {
 				lastRescueMs = ::GetTickCount64();
 				const McVec target = haveLastSafe ? lastSafe : McVec{ mc.x, double(ground) + 0.1, mc.z };
 				logger::info("fall rescue: Minecraft at {:.1f} is under the ground ({:.1f}); back to {:.1f} {:.1f} {:.1f}", mc.y, ground, target.x, target.y, target.z);
