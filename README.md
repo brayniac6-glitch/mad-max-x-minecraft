@@ -16,20 +16,20 @@ real copies:
 | | Requirement |
 |---|---|
 | **Mad Max** | The **GOG** PC version (build `565D5965`). MadCraft checks for a genuine Steam/GOG install and for this exact build. On any other build it stays off (with a message) instead of risking a crash. The Steam version isn't supported yet because its exe differs. |
-| **Minecraft** | **Minecraft: Java Edition**, bought, started from the **official launcher** and signed in with your **Microsoft account**. MadCraft stays off on offline or cracked launchers. |
+| **Minecraft** | **Minecraft: Java Edition**, bought, signed in with your **Microsoft account** in any launcher (official, Prism, MultiMC, ATLauncher, Modrinth App, CurseForge). MadCraft stays off on offline or cracked accounts. |
 | **Minecraft version** | **26.3** with **[Fabric Loader](https://fabricmc.net/use/installer/) 0.19.5+** and **[Fabric API](https://modrinth.com/mod/fabric-api) 0.161.0+26.3** |
 | **PC** | Windows 10/11 64-bit, DirectX 11, **16 GB RAM** recommended (both games run at once) |
 
 ## Download
 
-Get **`MadCraft-0.2.1.zip`** from this repository's **[Releases](../../releases)** page. Inside:
+Get **`MadCraft-0.2.2.zip`** from this repository's **[Releases](../../releases)** page. Inside:
 
 ```
 Mad Max folder/
     dinput8.dll              <- the Mad Max plugin
     madcraft/MadCraft.ini    <- settings
 Minecraft mods folder/
-    madcraft-0.2.1.jar       <- the Minecraft mod
+    madcraft-0.2.2.jar       <- the Minecraft mod
 ```
 
 ## Install
@@ -56,6 +56,19 @@ Things to know:
 
 #### 1. Minecraft (Fabric 26.3)
 
+Any launcher works: the official Minecraft Launcher, **Prism Launcher**, MultiMC, ATLauncher, the
+Modrinth App or CurseForge, as long as you sign in with the **Microsoft account that owns Minecraft**.
+MadCraft confirms that with Mojang the first time (it then works offline too).
+
+**Prism Launcher** (or MultiMC):
+
+1. **Add Instance** → Minecraft **26.3** → Mod loader **Fabric** (0.19.5 or newer) → OK.
+2. Select the instance → **Edit** → **Mods** → **Download mods** → search **Fabric API** → install it.
+3. In the same Mods page, **Add file** → pick **`madcraft-0.2.2.jar`** from the zip's `Minecraft mods folder`.
+4. Make sure your Microsoft account is selected (top right), then **Launch**.
+
+**Official Minecraft Launcher:**
+
 1. Open the official Minecraft Launcher once and run **26.3** so the version is downloaded.
 2. Download and run the **[Fabric Installer](https://fabricmc.net/use/installer/)**. Choose
    Minecraft **26.3**, Loader **0.19.5** or newer, and click **Install**. A **Fabric 26.3**
@@ -65,7 +78,7 @@ Things to know:
 4. Put these in it:
    - **Fabric API** for 26.3 ([Modrinth](https://modrinth.com/mod/fabric-api/versions) or
      [CurseForge](https://www.curseforge.com/minecraft/mc-mods/fabric-api))
-   - **`madcraft-0.2.1.jar`** from the zip's `Minecraft mods folder`
+   - **`madcraft-0.2.2.jar`** from the zip's `Minecraft mods folder`
 
 #### 2. Mad Max (GOG)
 
@@ -79,7 +92,7 @@ from your mods folder.
 
 ## Play
 
-1. Start **Minecraft** from the official launcher with the **Fabric 26.3** profile and wait for the
+1. Start **Minecraft** (your launcher's **Fabric 26.3** profile or instance) and wait for the
    title screen. You don't need to open a world.
 2. Start **Mad Max** (Galaxy or `MadMax.exe`) and load or start your save.
 3. Once Mad Max is in game, Minecraft links up by itself. It opens its "MadCraft" world, its window
@@ -138,10 +151,10 @@ Everything is in **`<Mad Max>\madcraft\MadCraft.ini`**, commented. The useful on
 
 - **A "MadCraft is off" message when Mad Max starts.** Your Mad Max isn't the supported GOG build,
   or isn't a Steam/GOG install. Mad Max still runs normally without MadCraft.
-- **A "MadCraft is off" popup in Minecraft.** Start Minecraft from the **official launcher**, signed
-  in with the Microsoft account that owns it.
+- **A "MadCraft is off" popup in Minecraft.** Sign in to your launcher with the Microsoft account that
+  owns Minecraft: Java Edition (offline accounts don't work), and be online the first time.
 - **Nothing links up.** Check that Minecraft is on the **Fabric 26.3** profile with Fabric API and
-  `madcraft-0.2.1.jar` in `mods`, then load a save in Mad Max (the main menu doesn't link). The log is
+  `madcraft-0.2.2.jar` in `mods`, then load a save in Mad Max (the main menu doesn't link). The log is
   `<Mad Max>\madcraft\MadCraft.log`. Minecraft's own log is `%appdata%\.minecraft\logs\latest.log`.
 - **"Not enough memory" or crashes when starting.** Both games are big. Close other programs; 16 GB
   RAM is recommended.

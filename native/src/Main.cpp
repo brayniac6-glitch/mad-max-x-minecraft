@@ -167,7 +167,7 @@ BOOL APIENTRY DllMain(HMODULE a_module, DWORD a_reason, LPVOID)
 			return TRUE;
 		}
 		madcraft::log::Open(madcraft::ModDir() / L"MadCraft.log");
-		logger::info("MadCraft 0.2.1 loading");
+		logger::info("MadCraft 0.2.2 loading");
 		if (!CheckGame()) {
 			return TRUE;
 		}
