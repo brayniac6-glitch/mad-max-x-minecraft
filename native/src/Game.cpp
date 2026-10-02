@@ -537,12 +537,14 @@ namespace madcraft
 			if (!inGame) {
 				teleportPending = true;
 				haveLastSet = false;
+				haveLastSafe = false;  // the menu scene's ground isn't the save's
 			} else if (haveLastSet) {
 				const double gap = std::hypot(feetMc.x - lastSet.x, feetMc.y - lastSet.y, feetMc.z - lastSet.z);
 				if (gap > kGameTeleportThreshold) {
 					logger::info("Mad Max moved the player ({:.0f} blocks); resyncing Minecraft", gap);
 					teleportPending = true;
 					haveLastSet = false;
+					haveLastSafe = false;  // a load, fast travel or cutscene: the old safe spot is elsewhere
 					lastJumpMs = ::GetTickCount64();  // a load's full health isn't food
 					if (gap > kLoadThreshold && !st.madMaxControls) {
 						// A load or fast travel lands on a loading screen or cutscene: Mad Max's, until
@@ -738,10 +740,12 @@ namespace madcraft
 			// Far below where the player last stood (64+ blocks) is the void, whatever the speed: no
 			// Mad Max ground is that far under a walkable spot.
 			const bool shallowFall = horizSpeed < 8.0 && !(mc.flags & proto::kMcOnGround) && !(mc.flags & proto::kMcFlying) && mc.y < ground - 2.0;
-			const bool deepFall = haveLastSafe && mc.y < lastSafe.y - 64.0;
-			if (puppet && rescueFrames == 0 && ::GetTickCount64() - lastRescueMs > 2000 && (ground > -1.0e29f || deepFall) && (shallowFall || deepFall)) {
+			// Only a safe spot right here counts (never one from before a load or teleport).
+			const bool safeNear = haveLastSafe && std::hypot(mc.x - lastSafe.x, mc.z - lastSafe.z) < 48.0;
+			const bool deepFall = safeNear && mc.y < lastSafe.y - 64.0;
+			if (puppet && rescueFrames == 0 && ::GetTickCount64() - lastRescueMs > 2000 && (safeNear || ground > -1.0e29f) && (shallowFall || deepFall)) {
 				lastRescueMs = ::GetTickCount64();
-				const McVec target = haveLastSafe ? lastSafe : McVec{ mc.x, double(ground) + 0.1, mc.z };
+				const McVec target = safeNear ? lastSafe : McVec{ mc.x, double(ground) + 0.1, mc.z };
 				logger::info("fall rescue: Minecraft at {:.1f} is under the ground ({:.1f}); back to {:.1f} {:.1f} {:.1f}", mc.y, ground, target.x, target.y, target.z);
 				{
 					std::lock_guard g{ poseLock };
